@@ -1,2 +1,7 @@
 creation d'un endpoint : methode controller relié à url
 parametre id livre >> format json (liste exemplaire, disponibilité exemplaire pour chaque exemplaire)
+
+creation d'un endpoint : methode controller relié à url
+parametre id adherant >> format json (abonnement, quota pret, sanction active ?)
+
+

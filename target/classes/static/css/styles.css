@@ -1,5 +1,3 @@
-
-/* Couleurs NiceAdmin */
 :root {
   --primary-color: #4154f1;
   --secondary-color: #f6f9ff;
@@ -252,4 +250,3 @@ body.toggle-sidebar main {
     max-width: 100%;
   }
 }
-

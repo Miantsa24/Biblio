@@ -155,18 +155,15 @@ main h2.page-title {
                                         <c:when test="${exemplaire.statut == 'EMPRUNTE'}">
                                             <span class="badge bg-warning">Emprunté</span>
                                         </c:when>
-                                        <c:when test="${exemplaire.statut == 'RESERVE' && exemplaireReservationsHonoree.contains(exemplaire.id)}">
+                                        <c:when test="${exemplaire.statut == 'RESERVE' && exemplaireReservations.contains(exemplaire.id)}">
                                             <span class="badge bg-primary">Réservé par vous</span>
                                         </c:when>
                                         <c:when test="${exemplaire.statut == 'RESERVE'}">
                                             <span class="badge bg-info">Réservé</span>
                                         </c:when>
-                                        <c:when test="${exemplaireReservationsEnAttente.contains(exemplaire.id)}">
-                                            <span class="badge bg-info">En attente de votre réservation</span>
-                                        </c:when>
                                     </c:choose>
                                 </p>
-                                <c:if test="${exemplaire.statut == 'EMPRUNTE' && !exemplaireReservationsEnAttente.contains(exemplaire.id) && !exemplaireReservationsHonoree.contains(exemplaire.id)}">
+                                <c:if test="${exemplaire.statut == 'EMPRUNTE' || (exemplaire.statut == 'RESERVE' && !exemplaireReservations.contains(exemplaire.id))}">
                                     <a href="/adherant/reservations?idExemplaire=${exemplaire.id}" class="btn btn-primary btn-sm">
                                         <i class="bi bi-bookmark-plus"></i> Réserver
                                     </a>

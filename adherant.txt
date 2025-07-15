@@ -15,7 +15,7 @@ fonctionnalités // >>> connexion adherant:
                 >>> pret en cours / adherant :
                                                 -liste des prets en cours pour l'adherant connecter
                                                 -bouton prolonger sur chaque pret en cours (demande de prolongement en voyé à l'admin pour être approuver ou refuser)
-                >>> formulaire reservation :
+               // >>> formulaire reservation :
                                                 -ref de l'adherant
                                                 -ref de l'exemplaire (si il a cliqué sur un bouton reserver depuis la liste des livres, le ref de l'exemplaire est automatiquement / dynamiquement écrit sur le champ de ref de l'exemplaire)
                                                 -date de reservation (date de prevision de pret du livre, ex: il veut preter le livre le 13/07/2025)
@@ -23,7 +23,7 @@ fonctionnalités // >>> connexion adherant:
                                                 (alternatif >>> côté admin: lorsque la demande est envoyé vers l'admin quand il approuve il doit comparer la date de reservation inséré dans l'input par l'adherant à la date de retour prevue de l'exemplaire qu'il veut reserver, si date de reservation < date de retour prevue (date de reservation est avant la date de retour prevue) la reservation est automatiquement annulé (refusé))
                                                 il renvoie ensuite une erreur vers le coté adherant (dans le menu de reservation) disant que sa reservation a été annulé en raison de l'indisponibilité de l'exemplaire pour la date de reservation que l'adherant a inséré + le livre sera disponible le "date de retour prevue"
                                                 si il y a encore des exemplaires disponibles pour l'exemplaire que l'user a choisi de reserver, renvoie une erreur, il y a encore un exemplaire disponible (deja fait dans côté admin)
-                >>> liste reservation :
+                //>>> liste reservation :
                                         -reservation en attente
                                         -reservation annulé
                                         -reservation approuvé (reservation approuvé par l'admin mais pas encore terminé (exemplaire encore preter))
@@ -682,3 +682,4 @@ Il peut pas reserver un exemplaire qu'il a deja reservé lui même
 
 Dans la liste des livres si l'exemplaire est reservé par l'adherant connecté, dans statut il devrait avoir "reservé par vous" et le bouton reserver s'enleve
 
+Quand c'est emprunté par l'adherant connecté,il ne peut plus reserver et statut "emprunté par vous"

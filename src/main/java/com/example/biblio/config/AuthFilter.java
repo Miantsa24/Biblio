@@ -24,7 +24,9 @@ public class AuthFilter extends OncePerRequestFilter {
             requestURI.equals("/admin/login") || 
             requestURI.equals("/adherant/login") || 
             requestURI.equals("/logout") || 
-            requestURI.equals("/adherant/logout")) {
+            requestURI.equals("/adherant/logout") || 
+            requestURI.matches("/adherant/livres/\\d+") || 
+            requestURI.matches("/adherants/\\d+")) { // Autoriser /adherants/{idAdherant}
             filterChain.doFilter(request, response);
             return;
         }

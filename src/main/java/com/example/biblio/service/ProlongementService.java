@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 // import java.time.LocalDateTime;
 import java.util.List;
 
@@ -38,6 +39,67 @@ public class ProlongementService {
     // Récupérer toutes les demandes de prolongement en attente
     public List<Prolongement> getAllPendingProlongements() {
         return prolongementRepository.findAllPendingProlongements();
+    }
+
+    @Transactional
+    public void demanderProlongement(Integer idPret, Integer idAdherant) {
+        logger.info("Demande de prolongement pour prêt id={} par adhérant id={}", idPret, idAdherant);
+
+        // Vérifier l'existence du prêt
+        Pret pret = pretRepository.findById(idPret)
+                .orElseThrow(() -> new IllegalArgumentException("Prêt non trouvé"));
+
+        // Vérifier que le prêt appartient à l'adhérant
+        if (!pret.getAdherant().getIdAdherant().equals(idAdherant)) {
+            throw new IllegalStateException("Ce prêt n'appartient pas à cet adhérant");
+        }
+
+        // Vérifier que le prêt est en cours
+        if (pret.getDateRetourReelle() != null) {
+            throw new IllegalStateException("Le prêt est déjà terminé");
+        }
+
+        // Récupérer l'adhérant
+        Adherant adherant = adherantRepository.findById(idAdherant)
+                .orElseThrow(() -> new IllegalArgumentException("Adhérant non trouvé"));
+
+        // Vérifier les règles de gestion
+        if (adherant.getQuotaRestantProlongement() <= 0) {
+            throw new IllegalStateException("Quota de prolongements dépassé");
+        }
+        if (pret.getNombreProlongements() >= adherant.getTypeAdherant().getQuotaProlongements()) {
+            throw new IllegalStateException("Nombre maximal de prolongements atteint pour ce prêt");
+        }
+        if (reservationRepository.hasActiveReservationBeforeDate(pret.getExemplaire().getId(), LocalDateTime.now())) {
+            throw new IllegalStateException("Prolongement non autorisé, exemplaire réservé");
+        }
+        if (abonnementRepository.hasActivePenalite(adherant.getIdAdherant(), LocalDate.now())) {
+            throw new IllegalStateException("Adhérant sanctionné");
+        }
+        if (!adherant.hasValidAbonnement(LocalDate.now())) {
+            throw new IllegalStateException("Abonnement non valide");
+        }
+        // Vérifier qu'il n'y a pas de demande de prolongement en attente pour ce prêt
+        List<Prolongement> prolongementsEnAttente = prolongementRepository.findByPretIdAndStatut(
+                idPret, Prolongement.StatutProlongement.EN_ATTENTE);
+        if (!prolongementsEnAttente.isEmpty()) {
+            throw new IllegalStateException("Une demande de prolongement est déjà en attente pour ce prêt");
+        }
+
+        // Créer la demande de prolongement
+        LocalDate nouvelleDateRetour = pret.getDateRetourPrevue().plusDays(DUREE_PROLONGEMENT);
+        Prolongement prolongement = new Prolongement(
+                pret,
+                adherant,
+                pret.getExemplaire(),
+                LocalDateTime.now(),
+                nouvelleDateRetour
+        );
+        prolongement.setStatut(Prolongement.StatutProlongement.EN_ATTENTE);
+        prolongementRepository.save(prolongement);
+
+        logger.info("Demande de prolongement créée : id={}, prêt id={}, nouvelle date de retour={}",
+                prolongement.getId(), idPret, nouvelleDateRetour);
     }
 
     @Transactional
