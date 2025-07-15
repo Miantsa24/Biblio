@@ -15,6 +15,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
     @Query("SELECT COUNT(r) > 0 FROM Reservation r WHERE r.idExemplaire = :exemplaireId AND r.statut IN ('EN_ATTENTE', 'HONOREE')")
     boolean hasActiveReservation(@Param("exemplaireId") Integer exemplaireId);
 
+    @Query("SELECT COUNT(r) > 0 FROM Reservation r WHERE r.idAdherant = :idAdherant AND r.idExemplaire = :exemplaireId AND r.statut IN ('EN_ATTENTE', 'HONOREE')")
+    boolean hasActiveReservationByAdherantAndExemplaire(@Param("idAdherant") Integer idAdherant, @Param("exemplaireId") Integer exemplaireId);
+
     @Query("SELECT COUNT(r) > 0 FROM Reservation r WHERE r.idExemplaire = :exemplaireId AND r.statut = 'HONOREE'")
     boolean hasHonoredReservation(@Param("exemplaireId") Integer exemplaireId);
 

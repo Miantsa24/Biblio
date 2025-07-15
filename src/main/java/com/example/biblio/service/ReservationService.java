@@ -73,6 +73,13 @@ public class ReservationService {
             throw new IllegalStateException("Quota de réservations dépassé");
         }
 
+        // Vérifier si l'adhérant a déjà une réservation active pour cet exemplaire
+        boolean hasActiveReservation = reservationRepository.hasActiveReservationByAdherantAndExemplaire(idAdherant, idExemplaire);
+        if (hasActiveReservation) {
+            logger.info("Réservation refusée pour adhérant id={} et exemplaire id={} : déjà réservé par cet adhérant.", idAdherant, idExemplaire);
+            throw new IllegalStateException("Vous avez déjà réservé cet exemplaire.");
+        }
+
         // Vérifier si un exemplaire du livre est disponible
         List<Exemplaire> exemplaires = exemplaireRepository.findByLivreId(livre.getId());
         boolean hasAvailableExemplaire = exemplaires.stream()

@@ -101,6 +101,11 @@ main h2.page-title {
   color: #fff;
 }
 
+.badge.bg-primary {
+  background-color: #4A6FA5;
+  color: #fff;
+}
+
 .card.exemplaire-card .btn-primary {
   background-color: #4A6FA5;
   border-color: #4A6FA5;
@@ -150,17 +155,19 @@ main h2.page-title {
                                         <c:when test="${exemplaire.statut == 'EMPRUNTE'}">
                                             <span class="badge bg-warning">Emprunté</span>
                                         </c:when>
+                                        <c:when test="${exemplaire.statut == 'RESERVE' && exemplaireReservations.contains(exemplaire.id)}">
+                                            <span class="badge bg-primary">Réservé par vous</span>
+                                        </c:when>
                                         <c:when test="${exemplaire.statut == 'RESERVE'}">
                                             <span class="badge bg-info">Réservé</span>
                                         </c:when>
                                     </c:choose>
                                 </p>
-                                <!-- Remplacer cette ligne dans la boucle c:forEach pour exemplaire -->
-                              <c:if test="${exemplaire.statut == 'EMPRUNTE' || exemplaire.statut == 'RESERVE'}">
-                                  <a href="/adherant/reservations?idExemplaire=${exemplaire.id}" class="btn btn-primary btn-sm">
-                                      <i class="bi bi-bookmark-plus"></i> Réserver
-                                  </a>
-                              </c:if>
+                                <c:if test="${exemplaire.statut == 'EMPRUNTE' || (exemplaire.statut == 'RESERVE' && !exemplaireReservations.contains(exemplaire.id))}">
+                                    <a href="/adherant/reservations?idExemplaire=${exemplaire.id}" class="btn btn-primary btn-sm">
+                                        <i class="bi bi-bookmark-plus"></i> Réserver
+                                    </a>
+                                </c:if>
                             </div>
                         </div>
                     </div>

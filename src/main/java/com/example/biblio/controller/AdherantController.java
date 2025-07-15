@@ -23,9 +23,9 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import jakarta.servlet.http.HttpSession;
-
 
 @Controller
 public class AdherantController {
@@ -200,12 +200,14 @@ public class AdherantController {
         return "adherant-index";
     }
 
-        @GetMapping("/adherant/livres")
+    @GetMapping("/adherant/livres")
     public String listLivres(Model model, HttpSession session) {
         if (session.getAttribute("adherantLoggedIn") == null) {
             logger.warn("Tentative d'accès à /adherant/livres sans connexion");
             return "redirect:/adherant/login";
         }
+        Adherant adherant = (Adherant) session.getAttribute("adherant");
+        Integer idAdherant = adherant != null ? adherant.getIdAdherant() : null;
         try {
             List<Livre> livres = livreRepository.findAll();
             for (Livre livre : livres) {
@@ -213,12 +215,22 @@ public class AdherantController {
                 logger.debug("Livre ID: {}, Titre: {}, Exemplaires: {}", 
                              livre.getId(), livre.getTitre(), livre.getExemplaires());
             }
-            logger.info("Livres trouvés : {}", livres.size());
+            // Récupérer les IDs des exemplaires réservés par l'adhérant
+            List<Integer> exemplaireReservations = idAdherant != null ? 
+                reservationRepository.findByIdAdherant(idAdherant).stream()
+                    .filter(r -> r.getStatut() == Reservation.StatutReservation.EN_ATTENTE || r.getStatut() == Reservation.StatutReservation.HONOREE)
+                    .map(Reservation::getIdExemplaire)
+                    .collect(Collectors.toList()) : Collections.emptyList();
+            logger.info("Livres trouvés : {}, Exemplaires réservés par adhérant ID {} : {}", livres.size(), idAdherant, exemplaireReservations.size());
             model.addAttribute("livres", livres);
+            model.addAttribute("exemplaireReservations", exemplaireReservations);
+            model.addAttribute("idAdherant", idAdherant);
         } catch (Exception e) {
             logger.error("Erreur lors de la récupération des livres : {}", e.getMessage(), e);
             model.addAttribute("errorMessage", "Erreur lors du chargement des livres.");
             model.addAttribute("livres", Collections.emptyList());
+            model.addAttribute("exemplaireReservations", Collections.emptyList());
+            model.addAttribute("idAdherant", idAdherant);
         }
         return "livres";
     }
@@ -245,28 +257,26 @@ public class AdherantController {
     }
 
     @GetMapping("/adherant/mes-reservations")
-public String listUserReservations(Model model, HttpSession session) {
-    Adherant adherant = (Adherant) session.getAttribute("adherant");
-    if (adherant == null) {
-        logger.warn("Tentative d'accès à /adherant/mes-reservations sans connexion");
-        return "redirect:/adherant/login";
-    }
-    Integer idAdherant = adherant.getIdAdherant();
-    try {
-        // Récupérer toutes les réservations pour l'adhérant, sans filtrer par statut
-        List<Reservation> reservations = reservationRepository.findByIdAdherant(idAdherant);
-        // Initialiser le champ transitoire exemplaire pour chaque réservation
-        for (Reservation reservation : reservations) {
-            Exemplaire exemplaire = exemplaireRepository.findById(reservation.getIdExemplaire()).orElse(null);
-            reservation.setExemplaire(exemplaire);
+    public String listUserReservations(Model model, HttpSession session) {
+        Adherant adherant = (Adherant) session.getAttribute("adherant");
+        if (adherant == null) {
+            logger.warn("Tentative d'accès à /adherant/mes-reservations sans connexion");
+            return "redirect:/adherant/login";
         }
-        model.addAttribute("reservations", reservations);
-        return "mes-reservations";
-    } catch (Exception e) {
-        logger.error("Erreur lors de la récupération des réservations pour l'adhérant ID {} : {}", idAdherant, e.getMessage(), e);
-        model.addAttribute("errorMessage", "Erreur lors du chargement des réservations. Veuillez réessayer.");
-        model.addAttribute("reservations", Collections.emptyList());
-        return "mes-reservations";
+        Integer idAdherant = adherant.getIdAdherant();
+        try {
+            List<Reservation> reservations = reservationRepository.findByIdAdherant(idAdherant);
+            for (Reservation reservation : reservations) {
+                Exemplaire exemplaire = exemplaireRepository.findById(reservation.getIdExemplaire()).orElse(null);
+                reservation.setExemplaire(exemplaire);
+            }
+            model.addAttribute("reservations", reservations);
+            return "mes-reservations";
+        } catch (Exception e) {
+            logger.error("Erreur lors de la récupération des réservations pour l'adhérant ID {} : {}", idAdherant, e.getMessage(), e);
+            model.addAttribute("errorMessage", "Erreur lors du chargement des réservations. Veuillez réessayer.");
+            model.addAttribute("reservations", Collections.emptyList());
+            return "mes-reservations";
+        }
     }
-}
 }
