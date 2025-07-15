@@ -1,0 +1,2593 @@
+J'ai un projet de gestion de bibliotheque utilisant comme technologie spring et comme base mysql, jsp jstl pour l'interface utilisateur
+J'ai plusieurs fonctionnalités pour le côté bibliothécaire comme "Ajouter un adhérant", "Preter un livre", "Rendre un livre", "Gérer les jours fériés", "Renouveler un abonnement", "Gerer les pénalités", "Approbation ou refus des reservations en attente, "Approbation ou refus des demandes de prolongement en attente"
+Avec les différents regles de gestion à respecter qui fonctionnent deja tres bien
+en theorie le côte bibliothecaire (admin) marche deja tres bien donc on y touche pas
+Maintenant, ce que j'aimerais faire c'est le côté adherant, mais on va faire petit à petit etape par etape donc
+Voici les fonctionnalités:
+fonctionnalités >>> connexion adherant: 
+                                        - login : email et motDePasse
+                                        -correspondance à l'email et le mot de passe donné lors de l'ajout d'un adherant (table adherant)
+                                        -lui seul peut accéder à son compte
+
+        >>> menu latéral comme dans cote bibliothécaire:
+                >>> accueil:
+                            -Message de Bienvenue
+                >>> liste livre :
+                                  -liste exemplaire / livre + statut / par exemplaire
+                                  - bouton reserver sur chaque exemplaires avec statut "emprunte" ou "reserve" >> formulaire reservation (demande de reservation en voyé à l'admin pour être approuver ou refuser)
+
+                >>> pret en cours / adherant :
+                                                -liste des prets en cours pour l'adherant connecter
+                                                -bouton prolonger sur chaque pret en cours (demande de prolongement en voyé à l'admin pour être approuver ou refuser)
+                >>> formulaire reservation :
+                                                -ref de l'adherant
+                                                -ref de l'exemplaire (si il a cliqué sur un bouton reserver depuis la liste des livres, le ref de l'exemplaire est automatiquement / dynamiquement écrit sur le champ de ref de l'exemplaire)
+                                                -date de reservation (date de prevision de pret du livre, ex: il veut preter le livre le 13/07/2025)
+                                                -bouton reserver (envoie la demande d'approbation vers l'admin)
+                                                (alternatif >>> côté admin: lorsque la demande est envoyé vers l'admin quand il approuve il doit comparer la date de reservation inséré dans l'input par l'adherant à la date de retour prevue de l'exemplaire qu'il veut reserver, si date de reservation < date de retour prevue (date de reservation est avant la date de retour prevue) la reservation est automatiquement annulé (refusé))
+                                                il renvoie ensuite une erreur vers le coté adherant (dans le menu de reservation) disant que sa reservation a été annulé en raison de l'indisponibilité de l'exemplaire pour la date de reservation que l'adherant a inséré + le livre sera disponible le "date de retour prevue"
+                >>> liste reservation :
+                                        -reservation en attente
+                                        -reservation annulé
+                                        -reservation approuvé (reservation approuvé par l'admin mais pas encore terminé (exemplaire encore preter))
+                                        -reservation qui peut être preter
+                >>> deconnexion
+
+alertes >>> reservation peut être preter maintenant
+        >>> doit rendre un livre
+        >>> ne peut être reserver car date reservation < date retour prevue (exemplaire dispo le "date retour prevue")
+        >>> l'exemplaire n'est pas encore rendu, rendu en retard (date retour reel)
+Mais concentrons nous d'abord que sur la connexion login de l'adherant:
+cahier des charges:
+Nom: Connexion_adhérant
+Objectifs: Permettre à un adhérant de se connecter au système pour accéder à ses fonctionnalités (réservation, prolongement).
+Acteur: Adhérant
+Entrée:
+email
+Mot de passe
+
+
+Scénario nominal:
+L'adhérant accède à l'interface de connexion.
+Il entre son login(email) et son mot de passe.
+Il clique sur le bouton "Se connecter".
+
+
+Règles de gestion:
+Le login et le mot de passe doivent correspondre à un adhérant existant.
+L'abonnement de l'adhérant doit être valide (date actuelle entre date de début et date de fin).
+L'adhérant ne doit pas avoir de sanction active.
+
+
+Scénario alternatif:
+Si une règle de gestion n'est pas respectée, afficher une erreur (ex. : "Identifiants incorrects" ou "Compte sanctionné").
+
+
+Résultat:
+L'adhérant est connecté et peut accéder aux fonctionnalités autorisées (réservation, prolongement).
+
+prends exemple sur le css du côté bibliothécaire
+
+Je vais te donner tous les codes juste pour titre d'information, c'est à toi de voir ce que tu dois utiliser, ne change pas tout car le site fonctionne déjà tres bien côté bibliothcaire
+
+Voici les repository:
+AbonnementRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Abonnement;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.Optional;
+
+@Repository
+public interface AbonnementRepository extends JpaRepository<Abonnement, Integer> {
+    @Query("SELECT a FROM Abonnement a WHERE a.adherant.id = :adherantId AND a.dateFin >= :date ORDER BY a.dateFin DESC")
+    Optional<Abonnement> findByAdherantIdAndDateFinAfter(Integer adherantId, LocalDate date);
+
+    @Query("SELECT COUNT(p) > 0 FROM Penalite p WHERE p.adherant.id = :adherantId AND p.dateFinPenalite >= :currentDate")
+    boolean hasActivePenalite(Integer adherantId, LocalDate currentDate);
+}
+AdherantRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Adherant;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@Repository
+public interface AdherantRepository extends JpaRepository<Adherant, Integer> {
+    boolean existsByEmail(String email);
+
+    @Query("SELECT a FROM Adherant a WHERE EXISTS (SELECT ab FROM a.abonnements ab WHERE ab.dateFin > :currentDate)")
+    List<Adherant> findAllWithValidAbonnement(LocalDate currentDate);
+}
+ExemplaireRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Exemplaire;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface ExemplaireRepository extends JpaRepository<Exemplaire, Integer> {
+    @Query("SELECT e FROM Exemplaire e WHERE e.livre.id = :livreId AND e.statut = 'DISPONIBLE'")
+    Optional<Exemplaire> findFirstByLivreIdAndStatutDisponible(Integer livreId);
+
+    @Query("SELECT e FROM Exemplaire e WHERE e.livre.id = :livreId")
+    List<Exemplaire> findByLivreId(Integer livreId);
+}
+JourFerierRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.JourFerier;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import java.time.LocalDate;
+
+public interface JourFerierRepository extends JpaRepository<JourFerier, Integer> {
+    @Query(value = "SELECT COUNT(*) FROM JourFerier WHERE date_ferier = :date", nativeQuery = true)
+    Long countByDateFerier(@Param("date") LocalDate dateFerier);
+
+    default boolean existsByDateFerier(LocalDate dateFerier) {
+        return countByDateFerier(dateFerier) > 0;
+    }
+}
+LivreRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Livre;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface LivreRepository extends JpaRepository<Livre, Integer> {
+    boolean existsByIsbn(String isbn);
+}
+PenaliteRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Penalite;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@Repository
+public interface PenaliteRepository extends JpaRepository<Penalite, Integer> {
+    boolean existsByAdherantIdAdherantAndDateFinPenaliteAfter(Integer idAdherant, LocalDate date);
+    List<Penalite> findByDateFinPenaliteAfter(LocalDate date);
+}
+ReservationRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Reservation;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Repository
+public interface ReservationRepository extends JpaRepository<Reservation, Integer> {
+
+    @Query("SELECT COUNT(r) > 0 FROM Reservation r WHERE r.idExemplaire = :exemplaireId AND r.statut IN ('EN_ATTENTE', 'HONOREE')")
+    boolean hasActiveReservation(@Param("exemplaireId") Integer exemplaireId);
+
+    @Query("SELECT COUNT(r) > 0 FROM Reservation r WHERE r.idExemplaire = :exemplaireId AND r.statut = 'HONOREE'")
+    boolean hasHonoredReservation(@Param("exemplaireId") Integer exemplaireId);
+
+    @Query("SELECT COUNT(r) > 0 FROM Reservation r WHERE r.idExemplaire = :exemplaireId AND r.statut = 'EN_ATTENTE' AND r.dateDemande < :dateDemande")
+    boolean hasActiveReservationBeforeDate(@Param("exemplaireId") Integer exemplaireId, @Param("dateDemande") LocalDateTime dateDemande);
+
+    @Query("SELECT COUNT(r) FROM Reservation r WHERE r.idAdherant = :idAdherant AND r.statut = 'EN_ATTENTE'")
+    int countActiveReservationsByAdherantId(@Param("idAdherant") Integer idAdherant);
+
+    @Query("SELECT r FROM Reservation r WHERE r.idExemplaire = :exemplaireId AND r.statut = 'EN_ATTENTE' ORDER BY r.dateDemande ASC, r.id ASC")
+    Reservation findFirstActiveReservationByExemplaireId(@Param("exemplaireId") Integer exemplaireId);
+
+    @Query("SELECT r FROM Reservation r WHERE r.statut = 'EN_ATTENTE' ORDER BY r.dateDemande ASC, r.id ASC")
+    List<Reservation> findAllPendingReservations();
+
+    @Query("SELECT r FROM Reservation r WHERE r.idAdherant = :idAdherant AND r.statut = :statut")
+    List<Reservation> findAllByAdherantIdAndStatut(@Param("idAdherant") Integer idAdherant, @Param("statut") Reservation.StatutReservation statut);
+
+    @Query("SELECT r FROM Reservation r WHERE r.idExemplaire = :exemplaireId AND r.statut IN ('EN_ATTENTE', 'HONOREE') " +
+           "ORDER BY CASE WHEN r.statut = 'HONOREE' THEN 0 ELSE 1 END, r.dateDemande ASC, r.id ASC FETCH FIRST 1 ROWS ONLY")
+    Reservation findTopPriorityReservationByExemplaireId(@Param("exemplaireId") Integer exemplaireId);
+}
+PretRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Pret;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface PretRepository extends JpaRepository<Pret, Integer> {
+    // Vérifie si l'exemplaire est actuellement emprunté (disponibilité)
+    Pret findByExemplaireIdAndDateRetourReelleIsNull(Integer exemplaireId);
+
+    // Vérifie si l'adhérant a des pénalités actives
+    @Query("SELECT COUNT(p) > 0 FROM Penalite p WHERE p.adherant.idAdherant = :adherantId AND p.dateFinPenalite >= :currentDate")
+    boolean hasActivePenalties(Integer adherantId, java.time.LocalDate currentDate);
+
+    // Vérifie si un prêt existe pour un adhérant et un exemplaire avec date_retour_reelle null
+    @Query("SELECT p FROM Pret p WHERE p.adherant.idAdherant = :adherantId AND p.exemplaire.id = :exemplaireId AND p.dateRetourReelle IS NULL")
+    Pret findByAdherantIdAndExemplaireIdAndDateRetourReelleIsNull(Integer adherantId, Integer exemplaireId);
+
+    // Récupère le dernier prêt rendu pour un exemplaire
+    @Query("SELECT p FROM Pret p WHERE p.exemplaire.id = :exemplaireId AND p.dateRetourReelle IS NOT NULL ORDER BY p.dateRetourReelle DESC")
+    Pret findByExemplaireIdAndDateRetourReelleIsNotNull(Integer exemplaireId);
+
+    // Récupère tous les prêts en cours (date_retour_reelle IS NULL)
+    @Query("SELECT p FROM Pret p WHERE p.dateRetourReelle IS NULL")
+    List<Pret> findAllByDateRetourReelleIsNull();
+
+    // Compte les prêts en cours pour un adhérant
+    long countByAdherantIdAdherantAndDateRetourReelleIsNull(Integer adherantId);
+}
+
+TypeAdherantRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.TypeAdherant;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import java.util.Optional;
+
+@Repository
+public interface TypeAdherantRepository extends JpaRepository<TypeAdherant, Integer> {
+    boolean existsByNomType(String nomType);
+    Optional<TypeAdherant> findByNomType(String nomType);
+}
+Sur ce projet c'est la connexion de l'administrateur qui est à la / du projet, tu peux donc changer cela et creer une page de choix de connexion à la racine du projet (pour choisir se connecter en tant qu'adherant ou administrateur)
+Si il choisit administrateur, il va vers le login ici, tu pourras changer ou ajouter les routes et les pages nécéssaires
+Voici tous mes controllers, je t'envoie tout juste en guise de renseignement mais change ou rajoute uniquement ce qui doit l'être
+AdherantController:
+package com.example.biblio.controller;
+
+import com.example.biblio.model.Adherant;
+import com.example.biblio.model.TypeAdherant;
+import com.example.biblio.repository.AdherantRepository;
+import com.example.biblio.repository.TypeAdherantRepository;
+import com.example.biblio.service.AdherantService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.List;
+
+@Controller
+public class AdherantController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AdherantController.class);
+
+    @Autowired
+    private AdherantService adherantService;
+
+    @Autowired
+    private TypeAdherantRepository typeAdherantRepository;
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @GetMapping("/ajouter")
+    public String afficherFormulaireAjout(Model model, @RequestParam(value = "success", required = false) String success) {
+        try {
+            List<TypeAdherant> types = typeAdherantRepository.findAll();
+            model.addAttribute("typesAdherant", types);
+        } catch (Exception e) {
+            logger.error("Erreur lors de la récupération des TypeAdherant : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", "Erreur lors du chargement des types d'adhérants.");
+            model.addAttribute("typesAdherant", Collections.emptyList());
+        }
+
+        String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        model.addAttribute("now", formattedDate);
+        if ("true".equals(success)) {
+            model.addAttribute("successMessage", "Adhérant ajouté avec succès !");
+        }
+        return "ajouter-adherant";
+    }
+
+    @PostMapping("/ajouter")
+    public String ajouterAdherant(@RequestParam String nom,
+                                  @RequestParam String prenom,
+                                  @RequestParam String dateNaissance,
+                                  @RequestParam String email,
+                                  @RequestParam String nomTypeAdherant,
+                                  @RequestParam String motDePasse,
+                                  @RequestParam String dateDebutAbonnement,
+                                  Model model) {
+        try {
+            adherantService.ajouterAdherant(
+                nom, prenom, LocalDate.parse(dateNaissance), email, nomTypeAdherant,
+                motDePasse, LocalDate.parse(dateDebutAbonnement));
+            return "redirect:/ajouter?success=true";
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur lors de l'ajout de l'adhérant : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", e.getMessage());
+            try {
+                model.addAttribute("typesAdherant", typeAdherantRepository.findAll());
+            } catch (Exception ex) {
+                logger.error("Erreur lors de la récupération des TypeAdherant (POST) : {}", ex.getMessage(), ex);
+                model.addAttribute("typesAdherant", Collections.emptyList());
+                model.addAttribute("errorMessage", "Erreur lors du chargement des types d'adhérants : " + ex.getMessage());
+            }
+            String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            model.addAttribute("now", formattedDate);
+            return "ajouter-adherant";
+        }
+    }
+
+    @GetMapping("/adherants")
+    public String listAdherants(Model model) {
+        try {
+            LocalDate currentDate = LocalDate.now();
+            logger.info("Récupération des adhérants avec abonnement valide au : {}", currentDate);
+            List<Adherant> adherants = adherantRepository.findAllWithValidAbonnement(currentDate);
+            for (Adherant adherant : adherants) {
+                adherant.getAbonnements().size();
+                logger.debug("Adhérant ID: {}, Nom: {}, Abonnements: {}", 
+                             adherant.getIdAdherant(), adherant.getNom() + " " + adherant.getPrenom(), adherant.getAbonnements());
+            }
+            logger.info("Adhérants avec abonnement valide trouvés : {}", adherants.size());
+            model.addAttribute("adherants", adherants);
+            model.addAttribute("currentDate", currentDate);
+        } catch (Exception e) {
+            logger.error("Erreur lors de la récupération des Adhérants : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", "Erreur lors du chargement des adhérants.");
+            model.addAttribute("adherants", Collections.emptyList());
+        }
+        return "liste-adherants";
+    }
+
+    @GetMapping("/renouveler")
+    public String afficherFormulaireRenouvellement(Model model, @RequestParam(value = "success", required = false) String success) {
+        String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        model.addAttribute("now", formattedDate);
+        if ("true".equals(success)) {
+            model.addAttribute("successMessage", "Abonnement renouvelé avec succès !");
+        }
+        return "renouveler-abonnement";
+    }
+
+    @PostMapping("/renouveler")
+    public String renouvelerAbonnement(@RequestParam Integer idAdherant,
+                                      @RequestParam String dateDebutAbonnement,
+                                      Model model) {
+        try {
+            adherantService.renouvelerAbonnement(idAdherant, LocalDate.parse(dateDebutAbonnement));
+            return "redirect:/renouveler?success=true";
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur lors du renouvellement de l'abonnement : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", e.getMessage());
+            String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            model.addAttribute("now", formattedDate);
+            return "renouveler-abonnement";
+        }
+    }
+}
+IndexController:
+package com.example.biblio.controller;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@Controller
+public class IndexController {
+
+    @GetMapping({"/index"})
+    public String home(Model model) {
+        return "index";
+    }
+}
+JourFerierController:
+
+package com.example.biblio.controller;
+
+import com.example.biblio.model.JourFerier;
+import com.example.biblio.repository.JourFerierRepository;
+import com.example.biblio.service.JourFerierService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+@Controller
+@RequestMapping("/jours-feries")
+public class JourFerierController {
+
+    private static final Logger logger = LoggerFactory.getLogger(JourFerierController.class);
+
+    @Autowired
+    private JourFerierService jourFerierService;
+
+    @Autowired
+    private JourFerierRepository jourFerierRepository;
+
+    @GetMapping
+    public String afficherFormulaireEtListe(Model model, @RequestParam(value = "success", required = false) String success) {
+        // Charger la liste des jours fériés
+        List<JourFerier> joursFeries = jourFerierRepository.findAll();
+        logger.info("Jours fériés récupérés : {}", joursFeries);
+        model.addAttribute("joursFeries", joursFeries);
+
+        // Ajouter la date actuelle pour le formulaire
+        String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        model.addAttribute("today", formattedDate);
+
+        // Message de succès si applicable
+        if ("true".equals(success)) {
+            model.addAttribute("successMessage", "Jour férié ajouté avec succès !");
+        }
+
+        return "gerer-jours-feries";
+    }
+
+    @PostMapping
+    public String ajouterJourFerier(@RequestParam String dateFerier,
+                                    @RequestParam(required = false) String description,
+                                    Model model) {
+        try {
+            jourFerierService.ajouterJourFerier(LocalDate.parse(dateFerier), description);
+            logger.info("Jour férié ajouté : date={}, description={}", dateFerier, description);
+            return "redirect:/jours-feries?success=true";
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur lors de l'ajout du jour férié : {}", e.getMessage());
+            model.addAttribute("errorMessage", e.getMessage());
+            model.addAttribute("joursFeries", jourFerierRepository.findAll());
+            String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            model.addAttribute("today", formattedDate);
+            return "gerer-jours-feries";
+        }
+    }
+}
+PenaliteController:
+package com.example.biblio.controller;
+
+import com.example.biblio.model.Penalite;
+import com.example.biblio.service.PenaliteService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+import java.util.List;
+
+@Controller
+@RequestMapping("/penalites")
+public class PenaliteController {
+
+    private static final Logger logger = LoggerFactory.getLogger(PenaliteController.class);
+
+    @Autowired
+    private PenaliteService penaliteService;
+
+    @GetMapping
+    public String afficherPenalitesEnCours(Model model) {
+        List<Penalite> penalites = penaliteService.getPenalitesEnCours();
+        logger.info("Pénalités en cours récupérées : {}", penalites);
+        model.addAttribute("penalites", penalites);
+        return "penalitesEnCours";
+    }
+}
+PretController:
+
+package com.example.biblio.controller;
+
+import com.example.biblio.model.Livre;
+import com.example.biblio.model.Pret;
+import com.example.biblio.repository.LivreRepository;
+import com.example.biblio.repository.PretRepository;
+import com.example.biblio.service.PretService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@Controller
+@RequestMapping("/prets")
+public class PretController {
+
+    @Autowired
+    private PretService pretService;
+
+    @Autowired
+    private LivreRepository livreRepository;
+
+    @Autowired
+    private PretRepository pretRepository;
+
+    @GetMapping
+    public String afficherFormulairePret(Model model, @RequestParam(value = "success", required = false) String success) {
+        List<Livre> livres = livreRepository.findAll();
+        model.addAttribute("livres", livres);
+        if ("true".equals(success)) {
+            model.addAttribute("successMessage", "Livre prêté avec succès !");
+        }
+        return "preterLivre";
+    }
+
+    @PostMapping
+    public String preterLivre(@RequestParam Integer idAdherant,
+                              @RequestParam Integer idLivre,
+                              @RequestParam String typePret,
+                              @RequestParam String datePret,
+                              Model model) {
+        try {
+            pretService.preterLivre(idAdherant, idLivre, typePret, LocalDate.parse(datePret));
+            return "redirect:/prets?success=true";
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            model.addAttribute("errorMessage", e.getMessage());
+            model.addAttribute("livres", livreRepository.findAll());
+            return "preterLivre";
+        }
+    }
+
+    @GetMapping("/liste")
+    public String listPrets(Model model) {
+        List<Pret> pretsEnCours = pretRepository.findAllByDateRetourReelleIsNull();
+        model.addAttribute("pretsEnCours", pretsEnCours);
+        return "liste-prets";
+    }
+}
+
+
+RendreLivreController:
+
+package com.example.biblio.controller;
+
+import com.example.biblio.service.RendreLivreService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+
+@Controller
+@RequestMapping("/retours")
+public class RendreLivreController {
+
+    private static final Logger logger = LoggerFactory.getLogger(RendreLivreController.class);
+
+    @Autowired
+    private RendreLivreService rendreLivreService;
+
+    @GetMapping
+    public String afficherFormulaireRetour(Model model, HttpSession session) {
+        String penaltyMessage = (String) session.getAttribute("penaltyMessage");
+        if (penaltyMessage != null) {
+            model.addAttribute("penaltyMessage", penaltyMessage);
+            session.removeAttribute("penaltyMessage");
+        }
+        return "rendreLivre";
+    }
+
+    @PostMapping
+    public String rendreLivre(@RequestParam Integer idAdherant,
+                              @RequestParam Integer idExemplaire,
+                              @RequestParam String dateRetourReelle,
+                              Model model,
+                              HttpSession session) {
+        try {
+            LocalDate parsedDateRetourReelle;
+            try {
+                parsedDateRetourReelle = LocalDate.parse(dateRetourReelle);
+                logger.info("Date retour réelle reçue (YYYY-MM-DD): {}, parsée: {}", dateRetourReelle, parsedDateRetourReelle);
+            } catch (DateTimeParseException e) {
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                parsedDateRetourReelle = LocalDate.parse(dateRetourReelle, formatter);
+                logger.info("Date retour réelle reçue (DD/MM/YYYY): {}, parsée: {}", dateRetourReelle, parsedDateRetourReelle);
+            }
+
+            LocalDate dateFinPenalite = rendreLivreService.rendreLivre(idAdherant, idExemplaire, parsedDateRetourReelle);
+            if (dateFinPenalite != null) {
+                session.setAttribute("penaltyMessage", "Livre rendu avec succès, mais vous êtes pénalisé jusqu'au " + dateFinPenalite);
+            } else {
+                session.setAttribute("penaltyMessage", "Livre rendu avec succès !");
+            }
+            return "redirect:/retours?success=true";
+        } catch (DateTimeParseException e) {
+            logger.error("Erreur de parsing de la date: {}", dateRetourReelle, e);
+            model.addAttribute("errorMessage", "Format de date invalide. Utilisez YYYY-MM-DD ou DD/MM/YYYY.");
+            return "rendreLivre";
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Erreur lors du retour: {}", e.getMessage());
+            model.addAttribute("errorMessage", e.getMessage());
+            return "rendreLivre";
+        } catch (Exception e) {
+            logger.error("Erreur inattendue lors du retour du livre: {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", "Une erreur inattendue s'est produite. Veuillez réessayer ou contacter l'administrateur.");
+            return "rendreLivre";
+        }
+    }
+}
+
+LoginController:
+package com.example.biblio.controller;
+
+import com.example.biblio.service.AdminService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import jakarta.servlet.http.HttpSession;
+
+@Controller
+public class LoginController {
+
+    private static final Logger logger = LoggerFactory.getLogger(LoginController.class);
+
+    @Autowired
+    private AdminService adminService;
+
+    @GetMapping("/")
+    public String showLoginPage(Model model) {
+        return "login";
+    }
+
+    @PostMapping("/login")
+    public String login(@RequestParam String email, @RequestParam String password, Model model, HttpSession session) {
+        try {
+            if (adminService.authenticate(email, password)) {
+                session.setAttribute("adminLoggedIn", true);
+                logger.info("Connexion réussie pour l'email : {}", email);
+                return "redirect:/index";
+            } else {
+                logger.warn("Échec de la connexion pour l'email : {}", email);
+                model.addAttribute("errorMessage", "Email ou mot de passe incorrect");
+                return "login";
+            }
+        } catch (Exception e) {
+            logger.error("Erreur lors de la tentative de connexion pour l'email : {}", email, e);
+            model.addAttribute("errorMessage", "Une erreur s'est produite. Veuillez réessayer.");
+            return "login";
+        }
+    }
+
+    @GetMapping("/logout")
+    public String logout(HttpSession session) {
+        session.invalidate();
+        logger.info("Déconnexion réussie");
+        return "redirect:/";
+    }
+}
+ReservationController:
+package com.example.biblio.controller;
+
+import com.example.biblio.model.Reservation;
+import com.example.biblio.repository.AdherantRepository;
+import com.example.biblio.repository.ExemplaireRepository;
+import com.example.biblio.repository.LivreRepository;
+import com.example.biblio.repository.ReservationRepository;
+import com.example.biblio.service.ReservationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@Controller
+@RequestMapping("/reservations")
+public class ReservationController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ReservationController.class);
+
+    @Autowired
+    private ReservationService reservationService;
+
+    @Autowired
+    private ReservationRepository reservationRepository;
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @Autowired
+    private ExemplaireRepository exemplaireRepository;
+
+    @Autowired
+    private LivreRepository livreRepository;
+
+
+    @GetMapping("/liste")
+    public String listReservations(Model model) {
+        List<Reservation> reservationsEnAttente = reservationRepository.findAllPendingReservations();
+        model.addAttribute("reservationsEnAttente", reservationsEnAttente);
+        model.addAttribute("adherantRepository", adherantRepository);
+        model.addAttribute("exemplaireRepository", exemplaireRepository);
+        model.addAttribute("livreRepository", livreRepository);
+        return "liste-reservations";
+    }
+
+    @PostMapping("/approuver")
+    public String approuverReservation(@RequestParam Integer idReservation, Model model) {
+        try {
+            reservationService.approuverReservation(idReservation);
+            return "redirect:/reservations/liste?success=approuver";
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Erreur lors de l'approbation de la réservation : {}", e.getMessage());
+            model.addAttribute("errorMessage", e.getMessage());
+            model.addAttribute("reservationsEnAttente", reservationRepository.findAllPendingReservations());
+            model.addAttribute("adherantRepository", adherantRepository);
+            model.addAttribute("exemplaireRepository", exemplaireRepository);
+            model.addAttribute("livreRepository", livreRepository);
+            return "liste-reservations";
+        }
+    }
+
+    @PostMapping("/refuser")
+    public String refuserReservation(@RequestParam Integer idReservation, Model model) {
+        try {
+            reservationService.refuserReservation(idReservation);
+            return "redirect:/reservations/liste?success=refuser";
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Erreur lors du refus de la réservation : {}", e.getMessage());
+            model.addAttribute("errorMessage", e.getMessage());
+            model.addAttribute("reservationsEnAttente", reservationRepository.findAllPendingReservations());
+            model.addAttribute("adherantRepository", adherantRepository);
+            model.addAttribute("exemplaireRepository", exemplaireRepository);
+            model.addAttribute("livreRepository", livreRepository);
+            return "liste-reservations";
+        }
+    }
+}
+ProlongementController:
+package com.example.biblio.controller;
+
+import com.example.biblio.model.Prolongement;
+import com.example.biblio.repository.AdherantRepository;
+import com.example.biblio.repository.ExemplaireRepository;
+import com.example.biblio.repository.LivreRepository;
+import com.example.biblio.service.ProlongementService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@Controller
+@RequestMapping("/prolongements")
+public class ProlongementController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ProlongementController.class);
+
+    @Autowired
+    private ProlongementService prolongementService;
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @Autowired
+    private ExemplaireRepository exemplaireRepository;
+
+    @Autowired
+    private LivreRepository livreRepository;
+
+    @GetMapping("/liste")
+    public String listProlongements(Model model) {
+        List<Prolongement> prolongementsEnAttente = prolongementService.getAllPendingProlongements();
+        model.addAttribute("prolongementsEnAttente", prolongementsEnAttente);
+        model.addAttribute("adherantRepository", adherantRepository);
+        model.addAttribute("exemplaireRepository", exemplaireRepository);
+        model.addAttribute("livreRepository", livreRepository);
+        return "liste-prolongements";
+    }
+
+    @PostMapping("/approuver")
+    public String approuverProlongement(@RequestParam Integer idProlongement, Model model) {
+        try {
+            prolongementService.approuverProlongement(idProlongement);
+            return "redirect:/prolongements/liste?success=approuver";
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Erreur lors de l'approbation du prolongement : {}", e.getMessage());
+            model.addAttribute("errorMessage", e.getMessage());
+            model.addAttribute("prolongementsEnAttente", prolongementService.getAllPendingProlongements());
+            model.addAttribute("adherantRepository", adherantRepository);
+            model.addAttribute("exemplaireRepository", exemplaireRepository);
+            model.addAttribute("livreRepository", livreRepository);
+            return "liste-prolongements";
+        }
+    }
+
+    @PostMapping("/refuser")
+    public String refuserProlongement(@RequestParam Integer idProlongement, Model model) {
+        try {
+            prolongementService.refuserProlongement(idProlongement);
+            return "redirect:/prolongements/liste?success=refuser";
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Erreur lors du refus du prolongement : {}", e.getMessage());
+            model.addAttribute("errorMessage", e.getMessage());
+            model.addAttribute("prolongementsEnAttente", prolongementService.getAllPendingProlongements());
+            model.addAttribute("adherantRepository", adherantRepository);
+            model.addAttribute("exemplaireRepository", exemplaireRepository);
+            model.addAttribute("livreRepository", livreRepository);
+            return "liste-prolongements";
+        }
+    }
+}
+Voici les model entités qui correspondent à la base: 
+Abonnement:
+
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+
+@Entity
+@Table(name = "abonnement")
+public class Abonnement {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_abonnement")
+    private Long idAbonnement;
+
+    @ManyToOne
+    @JoinColumn(name = "id_adherant", nullable = false)
+    private Adherant adherant;
+
+    @Column(name = "date_debut", nullable = false)
+    private LocalDate dateDebut;
+
+    @Column(name = "date_fin", nullable = false)
+    private LocalDate dateFin;
+
+    // Constructeurs
+    public Abonnement() {
+    }
+
+    public Abonnement(Adherant adherant, LocalDate dateDebut, LocalDate dateFin) {
+        this.adherant = adherant;
+        this.dateDebut = dateDebut;
+        this.dateFin = dateFin;
+    }
+
+    // Getters et Setters
+    public Long getIdAbonnement() {
+        return idAbonnement;
+    }
+
+    public void setIdAbonnement(Long idAbonnement) {
+        this.idAbonnement = idAbonnement;
+    }
+
+    public Adherant getAdherant() {
+        return adherant;
+    }
+
+    public void setAdherant(Adherant adherant) {
+        this.adherant = adherant;
+    }
+
+    public LocalDate getDateDebut() {
+        return dateDebut;
+    }
+
+    public void setDateDebut(LocalDate dateDebut) {
+        this.dateDebut = dateDebut;
+    }
+
+    public LocalDate getDateFin() {
+        return dateFin;
+    }
+
+    public void setDateFin(LocalDate dateFin) {
+        this.dateFin = dateFin;
+    }
+}
+
+Adherant:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+import java.util.List;
+
+@Entity
+@Table(name = "Adherant")
+public class Adherant {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_adherant")
+    private Integer idAdherant;
+
+    @Column(name = "nom", nullable = false)
+    private String nom;
+
+    @Column(name = "prenom", nullable = false)
+    private String prenom;
+
+    @Column(name = "date_naissance", nullable = false)
+    private LocalDate dateNaissance;
+
+    @Column(name = "email", nullable = false, unique = true)
+    private String email;
+
+    @Column(name = "mot_de_passe", nullable = false)
+    private String motDePasse;
+
+    @ManyToOne
+    @JoinColumn(name = "id_type_adherant", nullable = false)
+    private TypeAdherant typeAdherant;
+
+    @Column(name = "quota_restant", nullable = false)
+    private Integer quotaRestant;
+
+    @Column(name = "quota_restant_reservation", nullable = false)
+    private Integer quotaRestantReservation;
+
+    @Column(name = "quota_restant_prolongement", nullable = false)
+    private Integer quotaRestantProlongement;
+
+    @OneToMany(mappedBy = "adherant")
+    private List<Abonnement> abonnements;
+
+    public Adherant() {}
+
+    public Adherant(String nom, String prenom, LocalDate dateNaissance, String email, TypeAdherant typeAdherant, String motDePasse) {
+        this.nom = nom;
+        this.prenom = prenom;
+        this.dateNaissance = dateNaissance;
+        this.email = email;
+        this.typeAdherant = typeAdherant;
+        this.motDePasse = motDePasse;
+    }
+
+    public Integer getIdAdherant() {
+        return idAdherant;
+    }
+
+    public void setIdAdherant(Integer idAdherant) {
+        this.idAdherant = idAdherant;
+    }
+
+    public String getNom() {
+        return nom;
+    }
+
+    public void setNom(String nom) {
+        this.nom = nom;
+    }
+
+    public String getPrenom() {
+        return prenom;
+    }
+
+    public void setPrenom(String prenom) {
+        this.prenom = prenom;
+    }
+
+    public LocalDate getDateNaissance() {
+        return dateNaissance;
+    }
+
+    public void setDateNaissance(LocalDate dateNaissance) {
+        this.dateNaissance = dateNaissance;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getMotDePasse() {
+        return motDePasse;
+    }
+
+    public void setMotDePasse(String motDePasse) {
+        this.motDePasse = motDePasse;
+    }
+
+    public TypeAdherant getTypeAdherant() {
+        return typeAdherant;
+    }
+
+    public void setTypeAdherant(TypeAdherant typeAdherant) {
+        this.typeAdherant = typeAdherant;
+    }
+
+    public Integer getQuotaRestant() {
+        return quotaRestant;
+    }
+
+    public void setQuotaRestant(Integer quotaRestant) {
+        this.quotaRestant = quotaRestant;
+    }
+
+    public Integer getQuotaRestantReservation() {
+        return quotaRestantReservation;
+    }
+
+    public void setQuotaRestantReservation(Integer quotaRestantReservation) {
+        this.quotaRestantReservation = quotaRestantReservation;
+    }
+
+    public List<Abonnement> getAbonnements() {
+        return abonnements;
+    }
+
+    public void setAbonnements(List<Abonnement> abonnements) {
+        this.abonnements = abonnements;
+    }
+
+
+    public Integer getQuotaRestantProlongement() {
+        return quotaRestantProlongement;
+    }
+
+    public void setQuotaRestantProlongement(Integer quotaRestantProlongement) {
+        this.quotaRestantProlongement = quotaRestantProlongement;
+    }
+
+    public boolean hasValidAbonnement(LocalDate date) {
+        if (abonnements == null) return false;
+        return abonnements.stream()
+                .anyMatch(abonnement -> !date.isBefore(abonnement.getDateDebut()) && !date.isAfter(abonnement.getDateFin()));
+    }
+}
+Exemplaire:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "Exemplaire")
+public class Exemplaire {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_exemplaire")
+    private Integer id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_livre", nullable = false)
+    private Livre livre;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statut", nullable = false)
+    private StatutExemplaire statut = StatutExemplaire.DISPONIBLE;
+
+    public enum StatutExemplaire {
+        DISPONIBLE, EMPRUNTE, RESERVE
+    }
+
+    public Exemplaire() {}
+
+    public Exemplaire(Livre livre, StatutExemplaire statut) {
+        this.livre = livre;
+        this.statut = statut;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public Livre getLivre() {
+        return livre;
+    }
+
+    public void setLivre(Livre livre) {
+        this.livre = livre;
+    }
+
+    public Integer getIdLivre() {
+        return livre != null ? livre.getId() : null;
+    }
+
+    public void setIdLivre(Integer idLivre) {
+        if (idLivre != null) {
+            this.livre = new Livre();
+            this.livre.setId(idLivre);
+        } else {
+            this.livre = null;
+        }
+    }
+
+    public StatutExemplaire getStatut() {
+        return statut;
+    }
+
+    public void setStatut(StatutExemplaire statut) {
+        this.statut = statut;
+    }
+}
+JourFerier:
+
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+
+@Entity
+@Table(name = "JourFerier")
+public class JourFerier {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_jour_ferier")
+    private Integer idJourFerier;
+
+    @Column(name = "date_ferier", nullable = false, unique = true)
+    private LocalDate dateFerier;
+
+    @Column(name = "description")
+    private String description;
+
+    // Getters et setters
+    public Integer getIdJourFerier() {
+        return idJourFerier;
+    }
+
+    public void setIdJourFerier(Integer idJourFerier) {
+        this.idJourFerier = idJourFerier;
+    }
+
+    public LocalDate getDateFerier() {
+        return dateFerier;
+    }
+
+    public void setDateFerier(LocalDate dateFerier) {
+        this.dateFerier = dateFerier;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+}
+Livre:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.util.HashSet;
+import java.util.Set;
+
+@Entity
+@Table(name = "Livre")
+public class Livre {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_livre")
+    private Integer id;
+
+    @Column(name = "titre", nullable = false)
+    private String titre;
+
+    @Column(name = "auteur")
+    private String auteur;
+
+    @Column(name = "age_minimum", nullable = false)
+    private int ageMinimum;
+
+    @Column(name = "isbn", unique = true)
+    private String isbn;
+
+    @OneToMany(mappedBy = "livre")
+    private Set<Exemplaire> exemplaires = new HashSet<>();
+
+    public Livre() {}
+
+    public Livre(String titre, String auteur, int ageMinimum, String isbn) {
+        this.titre = titre;
+        this.auteur = auteur;
+        this.ageMinimum = ageMinimum;
+        this.isbn = isbn;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public String getTitre() {
+        return titre;
+    }
+
+    public void setTitre(String titre) {
+        this.titre = titre;
+    }
+
+    public String getAuteur() {
+        return auteur;
+    }
+
+    public void setAuteur(String auteur) {
+        this.auteur = auteur;
+    }
+
+    public int getAgeMinimum() {
+        return ageMinimum;
+    }
+
+    public void setAgeMinimum(int ageMinimum) {
+        this.ageMinimum = ageMinimum;
+    }
+
+    public String getIsbn() {
+        return isbn;
+    }
+
+    public void setIsbn(String isbn) {
+        this.isbn = isbn;
+    }
+
+    public Set<Exemplaire> getExemplaires() {
+        return exemplaires;
+    }
+
+    public void setExemplaires(Set<Exemplaire> exemplaires) {
+        this.exemplaires = exemplaires;
+    }
+}
+Penalite:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+
+@Entity
+@Table(name = "Penalite")
+public class Penalite {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_penalite")
+    private Integer id;
+
+    @ManyToOne
+    @JoinColumn(name = "id_adherant", nullable = false)
+    private Adherant adherant;
+
+    @ManyToOne
+    @JoinColumn(name = "id_pret")
+    private Pret pret;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type_penalite", nullable = false)
+    private TypePenalite typePenalite;
+
+    @Column(name = "date_debut_penalite", nullable = false)
+    private LocalDate dateDebutPenalite;
+
+    @Column(name = "nombre_jours", nullable = false)
+    private Integer nombreJours;
+
+    @Column(name = "date_fin_penalite", nullable = false)
+    private LocalDate dateFinPenalite;
+
+    public enum TypePenalite {
+        RETARD
+    }
+
+    public Penalite() {}
+
+    public Penalite(Adherant adherant, Pret pret, TypePenalite typePenalite, LocalDate dateDebutPenalite, Integer nombreJours, LocalDate dateFinPenalite) {
+        this.adherant = adherant;
+        this.pret = pret;
+        this.typePenalite = typePenalite;
+        this.dateDebutPenalite = dateDebutPenalite;
+        this.nombreJours = nombreJours;
+        this.dateFinPenalite = dateFinPenalite;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public Adherant getAdherant() {
+        return adherant;
+    }
+
+    public void setAdherant(Adherant adherant) {
+        this.adherant = adherant;
+    }
+
+    public Pret getPret() {
+        return pret;
+    }
+
+    public void setPret(Pret pret) {
+        this.pret = pret;
+    }
+
+    public TypePenalite getTypePenalite() {
+        return typePenalite;
+    }
+
+    public void setTypePenalite(TypePenalite typePenalite) {
+        this.typePenalite = typePenalite;
+    }
+
+    public LocalDate getDateDebutPenalite() {
+        return dateDebutPenalite;
+    }
+
+    public void setDateDebutPenalite(LocalDate dateDebutPenalite) {
+        this.dateDebutPenalite = dateDebutPenalite;
+    }
+
+    public Integer getNombreJours() {
+        return nombreJours;
+    }
+
+    public void setNombreJours(Integer nombreJours) {
+        this.nombreJours = nombreJours;
+    }
+
+    public LocalDate getDateFinPenalite() {
+        return dateFinPenalite;
+    }
+
+    public void setDateFinPenalite(LocalDate dateFinPenalite) {
+        this.dateFinPenalite = dateFinPenalite;
+    }
+}
+Pret:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+
+@Entity
+@Table(name = "Pret")
+public class Pret {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_pret")
+    private Integer id;
+
+    @ManyToOne
+    @JoinColumn(name = "id_exemplaire", nullable = false)
+    private Exemplaire exemplaire;
+
+    @ManyToOne
+    @JoinColumn(name = "id_adherant", nullable = false)
+    private Adherant adherant;
+
+    @Column(name = "date_pret", nullable = false)
+    private LocalDate datePret;
+
+    @Column(name = "date_retour_prevue", nullable = false)
+    private LocalDate dateRetourPrevue;
+
+    @Column(name = "date_retour_reelle")
+    private LocalDate dateRetourReelle;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type_pret", nullable = false)
+    private TypePret typePret;
+
+    @Column(name = "nombre_prolongements")
+    private Integer nombreProlongements = 0;
+
+    public enum TypePret {
+        LECTURE_SUR_PLACE, A_EMPORTER
+    }
+
+    public Pret() {}
+
+    public Pret(Exemplaire exemplaire, Adherant adherant, LocalDate datePret, LocalDate dateRetourPrevue, TypePret typePret) {
+        this.exemplaire = exemplaire;
+        this.adherant = adherant;
+        this.datePret = datePret;
+        this.dateRetourPrevue = dateRetourPrevue;
+        this.typePret = typePret;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public Exemplaire getExemplaire() {
+        return exemplaire;
+    }
+
+    public void setExemplaire(Exemplaire exemplaire) {
+        this.exemplaire = exemplaire;
+    }
+
+    public Adherant getAdherant() {
+        return adherant;
+    }
+
+    public void setAdherant(Adherant adherant) {
+        this.adherant = adherant;
+    }
+
+    public LocalDate getDatePret() {
+        return datePret;
+    }
+
+    public void setDatePret(LocalDate datePret) {
+        this.datePret = datePret;
+    }
+
+    public LocalDate getDateRetourPrevue() {
+        return dateRetourPrevue;
+    }
+
+    public void setDateRetourPrevue(LocalDate dateRetourPrevue) {
+        this.dateRetourPrevue = dateRetourPrevue;
+    }
+
+    public LocalDate getDateRetourReelle() {
+        return dateRetourReelle;
+    }
+
+    public void setDateRetourReelle(LocalDate dateRetourReelle) {
+        this.dateRetourReelle = dateRetourReelle;
+    }
+
+    public TypePret getTypePret() {
+        return typePret;
+    }
+
+    public void setTypePret(TypePret typePret) {
+        this.typePret = typePret;
+    }
+
+    public Integer getNombreProlongements() {
+        return nombreProlongements;
+    }
+
+    public void setNombreProlongements(Integer nombreProlongements) {
+        this.nombreProlongements = nombreProlongements;
+    }
+}
+Reservation:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+@Entity
+public class Reservation {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_reservation")
+    private Integer idReservation;
+
+    @Column(name = "id_exemplaire")
+    private Integer idExemplaire;
+
+    @Column(name = "id_adherant")
+    private Integer idAdherant;
+
+    @Column(name = "date_reservation")
+    private LocalDate dateReservation;
+
+    @Column(name = "date_demande")
+    private LocalDateTime dateDemande;
+
+    @Enumerated(EnumType.STRING)
+    private StatutReservation statut;
+
+    public enum StatutReservation {
+        EN_ATTENTE, HONOREE, ANNULEE, TERMINEE
+    }
+
+    // Getters and setters
+    public Integer getId() {
+        return idReservation;
+    }
+
+    public void setId(Integer idReservation) {
+        this.idReservation = idReservation;
+    }
+
+    public Integer getIdExemplaire() {
+        return idExemplaire;
+    }
+
+    public void setIdExemplaire(Integer idExemplaire) {
+        this.idExemplaire = idExemplaire;
+    }
+
+    public Integer getIdAdherant() {
+        return idAdherant;
+    }
+
+    public void setIdAdherant(Integer idAdherant) {
+        this.idAdherant = idAdherant;
+    }
+
+    public LocalDate getDateReservation() {
+        return dateReservation;
+    }
+
+    public void setDateReservation(LocalDate dateReservation) {
+        this.dateReservation = dateReservation;
+    }
+
+    public LocalDateTime getDateDemande() {
+        return dateDemande;
+    }
+
+    public void setDateDemande(LocalDateTime dateDemande) {
+        this.dateDemande = dateDemande;
+    }
+
+    public StatutReservation getStatut() {
+        return statut;
+    }
+
+    public void setStatut(StatutReservation statut) {
+        this.statut = statut;
+    }
+}
+TypeAdherant:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.util.HashSet;
+import java.util.Set;
+
+@Entity
+@Table(name = "Typeadherant")
+public class TypeAdherant {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_type_adherant")
+    private Integer id;
+
+    @Column(name = "nom_type", nullable = false, unique = true)
+    private String nomType;
+
+    @Column(name = "quota_emprunts", nullable = false)
+    private int quotaEmprunts;
+
+    @Column(name = "quota_reservations", nullable = false)
+    private int quotaReservations;
+
+    @Column(name = "quota_prolongements", nullable = false)
+    private int quotaProlongements;
+
+    @OneToMany(mappedBy = "typeAdherant")
+    private Set<Adherant> adherants = new HashSet<>();
+
+    public TypeAdherant() {}
+
+    public TypeAdherant(String nomType, int quotaEmprunts, int quotaReservations, int quotaProlongements) {
+        this.nomType = nomType;
+        this.quotaEmprunts = quotaEmprunts;
+        this.quotaReservations = quotaReservations;
+        this.quotaProlongements = quotaProlongements;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public String getNomType() {
+        return nomType;
+    }
+
+    public void setNomType(String nomType) {
+        this.nomType = nomType;
+    }
+
+    public int getQuotaEmprunts() {
+        return quotaEmprunts;
+    }
+
+    public void setQuotaEmprunts(int quotaEmprunts) {
+        this.quotaEmprunts = quotaEmprunts;
+    }
+
+    public int getQuotaReservations() {
+        return quotaReservations;
+    }
+
+    public void setQuotaReservations(int quotaReservations) {
+        this.quotaReservations = quotaReservations;
+    }
+
+    public int getQuotaProlongements() {
+        return quotaProlongements;
+    }
+
+    public void setQuotaProlongements(int quotaProlongements) {
+        this.quotaProlongements = quotaProlongements;
+    }
+
+    public Set<Adherant> getAdherants() {
+        return adherants;
+    }
+
+    public void setAdherants(Set<Adherant> adherants) {
+        this.adherants = adherants;
+    }
+}
+Admin:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "Admin")
+public class Admin {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_admin")
+    private Integer idAdmin;
+
+    @Column(name = "nom", nullable = false)
+    private String nom;
+
+    @Column(name = "email", nullable = false, unique = true)
+    private String email;
+
+    @Column(name = "mot_de_passe", nullable = false)
+    private String motDePasse;
+
+    public Admin() {}
+
+    public Admin(String nom, String email, String motDePasse) {
+        this.nom = nom;
+        this.email = email;
+        this.motDePasse = motDePasse;
+    }
+
+    // Getters et Setters
+    public Integer getIdAdmin() {
+        return idAdmin;
+    }
+
+    public void setIdAdmin(Integer idAdmin) {
+        this.idAdmin = idAdmin;
+    }
+
+    public String getNom() {
+        return nom;
+    }
+
+    public void setNom(String nom) {
+        this.nom = nom;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getMotDePasse() {
+        return motDePasse;
+    }
+
+    public void setMotDePasse(String motDePasse) {
+        this.motDePasse = motDePasse;
+    }
+}
+prolongement:
+package com.example.biblio.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "Prolongement")
+public class Prolongement {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_prolongement")
+    private Integer id;
+
+    @ManyToOne
+    @JoinColumn(name = "id_pret", nullable = false)
+    private Pret pret;
+
+    @ManyToOne
+    @JoinColumn(name = "id_adherant", nullable = false)
+    private Adherant adherant;
+
+    @ManyToOne
+    @JoinColumn(name = "id_exemplaire", nullable = false)
+    private Exemplaire exemplaire;
+
+    @Column(name = "date_demande")
+    private LocalDateTime dateDemande;
+
+    @Column(name = "nouvelle_date_retour_prevue", nullable = false)
+    private LocalDate nouvelleDateRetourPrevue;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statut", nullable = false)
+    private StatutProlongement statut = StatutProlongement.EN_ATTENTE;
+
+    public enum StatutProlongement {
+        EN_ATTENTE, APPROUVE, REFUSE
+    }
+
+    // Constructeurs
+    public Prolongement() {}
+
+    public Prolongement(Pret pret, Adherant adherant, Exemplaire exemplaire, LocalDateTime dateDemande, LocalDate nouvelleDateRetourPrevue) {
+        this.pret = pret;
+        this.adherant = adherant;
+        this.exemplaire = exemplaire;
+        this.dateDemande = dateDemande;
+        this.nouvelleDateRetourPrevue = nouvelleDateRetourPrevue;
+    }
+
+    // Getters et Setters
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public Pret getPret() {
+        return pret;
+    }
+
+    public void setPret(Pret pret) {
+        this.pret = pret;
+    }
+
+    public Adherant getAdherant() {
+        return adherant;
+    }
+
+    public void setAdherant(Adherant adherant) {
+        this.adherant = adherant;
+    }
+
+    public Exemplaire getExemplaire() {
+        return exemplaire;
+    }
+
+    public void setExemplaire(Exemplaire exemplaire) {
+        this.exemplaire = exemplaire;
+    }
+
+    public LocalDateTime getDateDemande() {
+        return dateDemande;
+    }
+
+    public void setDateDemande(LocalDateTime dateDemande) {
+        this.dateDemande = dateDemande;
+    }
+
+
+    public LocalDate getNouvelleDateRetourPrevue() {
+        return nouvelleDateRetourPrevue;
+    }
+
+    public void setNouvelleDateRetourPrevue(LocalDate nouvelleDateRetourPrevue) {
+        this.nouvelleDateRetourPrevue = nouvelleDateRetourPrevue;
+    }
+
+    public StatutProlongement getStatut() {
+        return statut;
+    }
+
+    public void setStatut(StatutProlongement statut) {
+        this.statut = statut;
+    }
+}
+Voici la base actuel:
+-- Création de la base de données
+CREATE DATABASE biblio;
+USE biblio;
+
+-- Table des livres
+CREATE TABLE Livre (
+    id_livre INT AUTO_INCREMENT PRIMARY KEY,
+    titre VARCHAR(255) NOT NULL,
+    auteur VARCHAR(255),
+    age_minimum INT NOT NULL DEFAULT 0, -- Âge minimum requis pour emprunter (ex. 18 pour certains livres)
+    isbn VARCHAR(13) UNIQUE
+);
+
+-- Table des exemplaires
+CREATE TABLE Exemplaire (
+    id_exemplaire INT AUTO_INCREMENT PRIMARY KEY,
+    id_livre INT NOT NULL,
+    statut ENUM('DISPONIBLE', 'EMPRUNTE', 'RESERVE') NOT NULL DEFAULT 'DISPONIBLE',
+    FOREIGN KEY (id_livre) REFERENCES Livre(id_livre) ON DELETE CASCADE
+);
+
+-- Table des types d'adhérants
+CREATE TABLE TypeAdherant (
+    id_type_adherant INT AUTO_INCREMENT PRIMARY KEY,
+    nom_type VARCHAR(255) UNIQUE NOT NULL,
+    quota_emprunts INT NOT NULL,
+    quota_reservations INT NOT NULL,
+    quota_prolongements INT NOT NULL
+);
+
+-- Table des adhérants
+CREATE TABLE Adherant (
+    id_adherant INT AUTO_INCREMENT PRIMARY KEY,
+    nom VARCHAR(255) NOT NULL,
+    prenom VARCHAR(255) NOT NULL,
+    date_naissance DATE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    mot_de_passe VARCHAR(255) NOT NULL,
+    id_type_adherant INT NOT NULL,
+    quota_restant INT NOT NULL DEFAULT 0,
+    quota_restant_reservation INT NOT NULL DEFAULT 0,
+    quota_restant_prolongement INT NOT NULL DEFAULT 0, -- Nouvelle colonne
+    FOREIGN KEY (id_type_adherant) REFERENCES TypeAdherant(id_type_adherant) ON DELETE RESTRICT
+);
+
+-- Table des abonnements
+CREATE TABLE Abonnement (
+    id_abonnement INT AUTO_INCREMENT PRIMARY KEY,
+    id_adherant INT NOT NULL,
+    date_debut DATE NOT NULL,
+    date_fin DATE NOT NULL,
+    CHECK (date_fin > date_debut),
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE
+);
+
+-- Table des prêts
+CREATE TABLE Pret (
+    id_pret INT AUTO_INCREMENT PRIMARY KEY,
+    id_exemplaire INT NOT NULL,
+    id_adherant INT NOT NULL,
+    date_pret DATE NOT NULL,
+    date_retour_prevue DATE NOT NULL,
+    date_retour_reelle DATE,
+    type_pret ENUM('LECTURE_SUR_PLACE', 'A_EMPORTER') NOT NULL,
+    nombre_prolongements INT DEFAULT 0,
+    CHECK (date_retour_prevue >= date_pret),
+    FOREIGN KEY (id_exemplaire) REFERENCES Exemplaire(id_exemplaire) ON DELETE CASCADE,
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE
+);
+
+-- Table des réservations
+CREATE TABLE Reservation (
+    id_reservation INT AUTO_INCREMENT PRIMARY KEY,
+    id_exemplaire INT NOT NULL,
+    id_adherant INT NOT NULL,
+    date_reservation DATE NOT NULL,
+    date_demande DATETIME NOT NULL,
+    statut ENUM('EN_ATTENTE', 'HONOREE', 'ANNULEE', 'TERMINEE') NOT NULL DEFAULT 'EN_ATTENTE',
+    FOREIGN KEY (id_exemplaire) REFERENCES Exemplaire(id_exemplaire) ON DELETE CASCADE,
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE
+);
+
+-- Ajouter un index pour optimiser les requêtes de tri sur date_demande
+CREATE INDEX idx_reservation_date_demande ON Reservation (date_demande);
+
+-- Table des pénalités
+CREATE TABLE Penalite (
+    id_penalite INT AUTO_INCREMENT PRIMARY KEY,
+    id_adherant INT NOT NULL,
+    id_pret INT, -- Lien vers le prêt spécifique (facultatif)
+    type_penalite ENUM('RETARD') NOT NULL,
+    date_debut_penalite DATE NOT NULL,
+    nombre_jours INT NOT NULL,
+    date_fin_penalite DATE NOT NULL,
+    CHECK (date_fin_penalite >= date_debut_penalite),
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE,
+    FOREIGN KEY (id_pret) REFERENCES Pret(id_pret) ON DELETE SET NULL
+);
+
+-- Table des jours fériés
+CREATE TABLE JourFerier (
+    id_jour_ferier INT AUTO_INCREMENT PRIMARY KEY,
+    date_ferier DATE NOT NULL UNIQUE,
+    description VARCHAR(255)
+);
+
+-- Ajout de la table Admin
+CREATE TABLE Admin (
+    id_admin INT AUTO_INCREMENT PRIMARY KEY,
+    nom VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    mot_de_passe VARCHAR(255) NOT NULL
+);
+
+-- Table des prolongements
+CREATE TABLE Prolongement (
+    id_prolongement INT AUTO_INCREMENT PRIMARY KEY,
+    id_pret INT NOT NULL,
+    id_adherant INT NOT NULL,
+    id_exemplaire INT NOT NULL,
+    date_demande DATETIME NOT NULL,
+    nouvelle_date_retour_prevue DATE NOT NULL,
+    statut ENUM('EN_ATTENTE', 'APPROUVE', 'REFUSE') NOT NULL DEFAULT 'EN_ATTENTE',
+    FOREIGN KEY (id_pret) REFERENCES Pret(id_pret) ON DELETE CASCADE,
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE,
+    FOREIGN KEY (id_exemplaire) REFERENCES Exemplaire(id_exemplaire) ON DELETE CASCADE
+);
+
+-- -- Insertion d'un admin par défaut (le mot de passe sera haché dans le code)
+-- INSERT INTO Admin (nom, email, mot_de_passe)
+-- VALUES ('Admin Bibliothèque', 'admin@biblio.com', 'admin123'); -- Placeholder, sera remplacé par un mot de passe haché
+
+-- Données pour TypeAdherant
+INSERT INTO TypeAdherant (nom_type, quota_emprunts, quota_reservations, quota_prolongements)
+VALUES ('étudiant', 3, 2, 2),
+       ('professionnel', 5, 3, 2),
+       ('professeur', 5, 5, 3);
+
+INSERT INTO Livre (titre, auteur, age_minimum, isbn)
+VALUES 
+    ('Le Petit Prince', 'Antoine de Saint-Exupéry', 0, '9781234567890'),
+    ('1984', 'George Orwell', 16, '9780987654321'),
+    ('Harry Potter', 'J.K. Rowling', 10, '9781122334455');
+
+    INSERT INTO Exemplaire (id_exemplaire, id_livre, statut)
+VALUES
+    (1, 1, 'EMPRUNTE'),
+    (2, 1, 'DISPONIBLE'),
+    (3, 2, 'EMPRUNTE'),
+    (4, 2, 'DISPONIBLE');
+Voici maintenant les service, cest ici qu'on appelle les fonctions des requetes dans repository, les fonctions dans ces services sont ensuite appelé dans controller précédemment cités
+AdherantService:
+package com.example.biblio.service;
+
+import com.example.biblio.model.Adherant;
+import com.example.biblio.model.Abonnement;
+import com.example.biblio.model.TypeAdherant;
+import com.example.biblio.repository.AdherantRepository;
+import com.example.biblio.repository.AbonnementRepository;
+import com.example.biblio.repository.TypeAdherantRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.util.Optional;
+
+@Service
+public class AdherantService {
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @Autowired
+    private TypeAdherantRepository typeAdherantRepository;
+
+    @Autowired
+    private AbonnementRepository abonnementRepository;
+
+    public Adherant ajouterAdherant(String nom, String prenom, LocalDate dateNaissance, String email,
+                                    String nomTypeAdherant, String motDePasse,
+                                    LocalDate dateDebutAbonnement) {
+        // Vérification des champs obligatoires
+        if (nom == null || nom.isEmpty() || prenom == null || prenom.isEmpty() ||
+            dateNaissance == null || motDePasse == null || motDePasse.isEmpty()) {
+            throw new IllegalArgumentException("Nom, prénom, date de naissance, et mot de passe sont obligatoires");
+        }
+
+        // Vérification de l'unicité de l'email
+        if (adherantRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email déjà utilisé");
+        }
+
+        // Vérification du type d'adhérant
+        TypeAdherant typeAdherant = typeAdherantRepository.findByNomType(nomTypeAdherant)
+                .orElseThrow(() -> new IllegalArgumentException("Type d'adhérant invalide : " + nomTypeAdherant));
+
+        // Vérification de la date de début d'abonnement
+        if (dateDebutAbonnement == null) {
+            throw new IllegalArgumentException("La date de début d'abonnement est obligatoire");
+        }
+
+        // Calcul de la date de fin d'abonnement (365 jours après la date de début)
+        LocalDate dateFinAbonnement = dateDebutAbonnement.plusDays(365);
+
+        // Création de l'adhérant
+        Adherant adherant = new Adherant(nom, prenom, dateNaissance, email, typeAdherant, motDePasse);
+        // Dans la méthode ajouterAdherant, après l'initialisation de quotaRestantReservation
+        adherant.setQuotaRestant(typeAdherant.getQuotaEmprunts()); // Initialisation de quota_restant
+        adherant.setQuotaRestantReservation(typeAdherant.getQuotaReservations()); // Initialisation de quota_restant_reservation
+        adherant.setQuotaRestantProlongement(typeAdherant.getQuotaProlongements()); // Initialisation de quota_restant_prolongement
+
+        // Sauvegarde de l'adhérant
+        adherantRepository.save(adherant);
+
+        // Création de l'abonnement
+        Abonnement abonnement = new Abonnement(adherant, dateDebutAbonnement, dateFinAbonnement);
+        abonnementRepository.save(abonnement);
+
+        return adherant;
+    }
+
+    public void renouvelerAbonnement(Integer idAdherant, LocalDate nouvelleDateDebut) {
+        // Vérifier si l'adhérant existe
+        Adherant adherant = adherantRepository.findById(idAdherant)
+                .orElseThrow(() -> new IllegalArgumentException("Adhérant non trouvé"));
+
+        // Vérifier les pénalités actives
+        if (abonnementRepository.hasActivePenalite(idAdherant, LocalDate.now())) {
+            throw new IllegalArgumentException("L'adhérant a une pénalité active");
+        }
+
+        // Trouver l'abonnement actuel le plus récent
+        Optional<Abonnement> currentAbonnementOpt = abonnementRepository.findByAdherantIdAndDateFinAfter(idAdherant, LocalDate.now());
+        if (currentAbonnementOpt.isPresent()) {
+            LocalDate currentDateFin = currentAbonnementOpt.get().getDateFin();
+            // Vérifier que la nouvelle date de début est postérieure à la date de fin actuelle
+            if (nouvelleDateDebut.isBefore(currentDateFin) || nouvelleDateDebut.isEqual(currentDateFin)) {
+                throw new IllegalArgumentException("La nouvelle date de début doit être postérieure à la date de fin actuelle (" + currentDateFin + ")");
+            }
+        }
+
+        // Calculer la nouvelle date de fin (365 jours après la nouvelle date de début)
+        LocalDate nouvelleDateFin = nouvelleDateDebut.plusDays(365);
+
+        // Créer un nouvel abonnement
+        Abonnement nouvelAbonnement = new Abonnement(adherant, nouvelleDateDebut, nouvelleDateFin);
+        abonnementRepository.save(nouvelAbonnement);
+    }
+}
+PretService,
+RendreLivreService,
+AdminService:
+package com.example.biblio.service;
+
+import com.example.biblio.model.Admin;
+import com.example.biblio.repository.AdminRepository;
+import org.mindrot.jbcrypt.BCrypt;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import jakarta.annotation.PostConstruct;
+import java.util.Optional;
+
+@Service
+public class AdminService {
+
+    @Autowired
+    private AdminRepository adminRepository;
+
+    // Initialisation de l'admin par défaut après le démarrage de l'application
+    @PostConstruct
+    public void initDefaultAdmin() {
+        Optional<Admin> adminOpt = adminRepository.findByEmail("admin@biblio.com");
+        if (adminOpt.isEmpty()) {
+            String hashedPassword = BCrypt.hashpw("admin123", BCrypt.gensalt());
+            Admin admin = new Admin("Admin Bibliothèque", "admin@biblio.com", hashedPassword);
+            adminRepository.save(admin);
+        }
+    }
+
+    public boolean authenticate(String email, String password) {
+        Optional<Admin> adminOpt = adminRepository.findByEmail(email);
+        if (adminOpt.isPresent()) {
+            Admin admin = adminOpt.get();
+            return BCrypt.checkpw(password, admin.getMotDePasse());
+        }
+        return false;
+    }
+}
+ReservationService:
+package com.example.biblio.service;
+
+import com.example.biblio.model.Adherant;
+import com.example.biblio.model.Exemplaire;
+import com.example.biblio.model.Livre;
+import com.example.biblio.model.Reservation;
+import com.example.biblio.repository.AdherantRepository;
+import com.example.biblio.repository.AbonnementRepository;
+import com.example.biblio.repository.ExemplaireRepository;
+import com.example.biblio.repository.LivreRepository;
+import com.example.biblio.repository.ReservationRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+
+@Service
+public class ReservationService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ReservationService.class);
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @Autowired
+    private AbonnementRepository abonnementRepository;
+
+    @Autowired
+    private ExemplaireRepository exemplaireRepository;
+
+    @Autowired
+    private LivreRepository livreRepository;
+
+    @Autowired
+    private ReservationRepository reservationRepository;
+
+    @Transactional
+    public void reserverLivre(Integer idAdherant, Integer idLivre, LocalDate dateReservation) {
+        Adherant adherant = adherantRepository.findById(idAdherant)
+                .orElseThrow(() -> new IllegalArgumentException("Adhérant non trouvé"));
+
+        if (!adherant.hasValidAbonnement(dateReservation)) {
+            throw new IllegalStateException("Abonnement non valide");
+        }
+
+        if (abonnementRepository.hasActivePenalite(idAdherant, dateReservation)) {
+            throw new IllegalStateException("Adhérant sanctionné");
+        }
+
+        Livre livre = livreRepository.findById(idLivre)
+                .orElseThrow(() -> new IllegalArgumentException("Livre non trouvé"));
+
+        int ageAdherant = (int) ChronoUnit.YEARS.between(adherant.getDateNaissance(), dateReservation);
+        if (livre.getAgeMinimum() > ageAdherant) {
+            throw new IllegalStateException("Livre non adapté à l'âge de l'adhérant");
+        }
+
+        if (adherant.getQuotaRestantReservation() <= 0) {
+            throw new IllegalStateException("Quota de réservations dépassé");
+        }
+
+        // Vérifier si un exemplaire est disponible pour ce livre
+        List<Exemplaire> exemplaires = exemplaireRepository.findByLivreId(idLivre);
+        boolean hasAvailableExemplaire = exemplaires.stream()
+                .anyMatch(e -> e.getStatut() == Exemplaire.StatutExemplaire.DISPONIBLE);
+        if (hasAvailableExemplaire) {
+            logger.info("Réservation refusée pour adhérant id={} et livre id={} : un exemplaire est disponible.", idAdherant, idLivre);
+            throw new IllegalStateException("Un exemplaire de ce livre est disponible. Veuillez emprunter directement.");
+        }
+
+        // Trouver un exemplaire non disponible pour la réservation
+        Exemplaire exemplaireNonDisponible = exemplaires.stream()
+                .filter(e -> e.getStatut() != Exemplaire.StatutExemplaire.DISPONIBLE)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Aucun exemplaire non disponible pour ce livre"));
+
+        Reservation reservation = new Reservation();
+        reservation.setIdAdherant(idAdherant);
+        reservation.setIdExemplaire(exemplaireNonDisponible.getId());
+        reservation.setDateReservation(dateReservation);
+        reservation.setDateDemande(LocalDateTime.now());
+        reservation.setStatut(Reservation.StatutReservation.EN_ATTENTE);
+
+        reservationRepository.save(reservation);
+        logger.info("Réservation créée pour adhérant id={} et exemplaire id={}, date_demande={}", 
+                    idAdherant, exemplaireNonDisponible.getId(), reservation.getDateDemande());
+    }
+
+    @Transactional
+    public void approuverReservation(Integer idReservation) {
+        Reservation reservation = reservationRepository.findById(idReservation)
+                .orElseThrow(() -> new IllegalArgumentException("Réservation non trouvée"));
+
+        if (reservation.getStatut() != Reservation.StatutReservation.EN_ATTENTE) {
+            throw new IllegalStateException("La réservation n'est pas en attente");
+        }
+
+        Adherant adherant = adherantRepository.findById(reservation.getIdAdherant())
+                .orElseThrow(() -> new IllegalArgumentException("Adhérant non trouvé"));
+
+        // Vérifier et décrémenter le quota
+        if (adherant.getQuotaRestantReservation() <= 0) {
+            throw new IllegalStateException("Quota de réservations dépassé");
+        }
+        int ancienQuota = adherant.getQuotaRestantReservation();
+        adherant.setQuotaRestantReservation(ancienQuota - 1);
+        adherantRepository.save(adherant);
+        logger.info("Quota de réservations décrémenté pour adhérant id={} : {} -> {}", 
+                    adherant.getIdAdherant(), ancienQuota, adherant.getQuotaRestantReservation());
+
+        reservation.setStatut(Reservation.StatutReservation.HONOREE);
+        reservationRepository.save(reservation);
+
+        // Mettre à jour le statut de l'exemplaire à RESERVE si ce n'est pas déjà EMPRUNTE
+        Exemplaire exemplaire = exemplaireRepository.findById(reservation.getIdExemplaire())
+                .orElseThrow(() -> new IllegalArgumentException("Exemplaire non trouvé"));
+        if (exemplaire.getStatut() != Exemplaire.StatutExemplaire.EMPRUNTE) {
+            exemplaire.setStatut(Exemplaire.StatutExemplaire.RESERVE);
+            exemplaireRepository.save(exemplaire);
+        }
+    }
+
+    @Transactional
+    public void refuserReservation(Integer idReservation) {
+        Reservation reservation = reservationRepository.findById(idReservation)
+                .orElseThrow(() -> new IllegalArgumentException("Réservation non trouvée"));
+
+        if (reservation.getStatut() != Reservation.StatutReservation.EN_ATTENTE) {
+            throw new IllegalStateException("La réservation n'est pas en attente");
+        }
+
+        reservation.setStatut(Reservation.StatutReservation.ANNULEE);
+        reservationRepository.save(reservation);
+
+        Exemplaire exemplaire = exemplaireRepository.findById(reservation.getIdExemplaire())
+                .orElseThrow(() -> new IllegalArgumentException("Exemplaire non trouvé"));
+        boolean hasOtherReservations = reservationRepository.hasActiveReservation(exemplaire.getId());
+        if (!hasOtherReservations && exemplaire.getStatut() == Exemplaire.StatutExemplaire.RESERVE) {
+            exemplaire.setStatut(Exemplaire.StatutExemplaire.DISPONIBLE);
+            exemplaireRepository.save(exemplaire);
+        }
+    }
+
+    public List<Reservation> getAllPendingReservations() {
+        return reservationRepository.findAllPendingReservations();
+    }
+}
+prolongementService:
+package com.example.biblio.service;
+
+import com.example.biblio.model.Adherant;
+import com.example.biblio.model.Pret;
+import com.example.biblio.model.Prolongement;
+import com.example.biblio.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+// import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+public class ProlongementService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ProlongementService.class);
+    private static final int DUREE_PROLONGEMENT = 14; // Durée du prolongement en jours
+
+    @Autowired
+    private ProlongementRepository prolongementRepository;
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @Autowired
+    private PretRepository pretRepository;
+
+    @Autowired
+    private ReservationRepository reservationRepository;
+
+    @Autowired
+    private AbonnementRepository abonnementRepository;
+
+    // Récupérer toutes les demandes de prolongement en attente
+    public List<Prolongement> getAllPendingProlongements() {
+        return prolongementRepository.findAllPendingProlongements();
+    }
+
+    @Transactional
+    public void approuverProlongement(Integer idProlongement) {
+        Prolongement prolongement = prolongementRepository.findById(idProlongement)
+                .orElseThrow(() -> new IllegalArgumentException("Demande de prolongement non trouvée"));
+
+        if (prolongement.getStatut() != Prolongement.StatutProlongement.EN_ATTENTE) {
+            throw new IllegalStateException("La demande de prolongement n'est pas en attente");
+        }
+
+        // Récupérer l'adhérant
+        Adherant adherant = adherantRepository.findById(prolongement.getAdherant().getIdAdherant())
+                .orElseThrow(() -> new IllegalArgumentException("Adhérant non trouvé"));
+
+        // Vérifier les règles de gestion
+        // 1. L'adhérant doit exister
+        // (Déjà vérifié par findById)
+
+        // 2. L'exemplaire doit être actuellement emprunté par cet adhérant
+        Pret pret = pretRepository.findByAdherantIdAndExemplaireIdAndDateRetourReelleIsNull(
+                prolongement.getAdherant().getIdAdherant(),
+                prolongement.getExemplaire().getId());
+        if (pret == null) {
+            throw new IllegalStateException("L'exemplaire n'est pas actuellement emprunté par cet adhérant");
+        }
+
+        // 3. Le nombre de prolongements autorisés n'est pas dépassé
+        if (adherant.getQuotaRestantProlongement() <= 0) {
+            throw new IllegalStateException("Quota de prolongements dépassé");
+        }
+        if (pret.getNombreProlongements() >= adherant.getTypeAdherant().getQuotaProlongements()) {
+            throw new IllegalStateException("Nombre maximal de prolongements atteint pour ce prêt");
+        }
+
+        // 4. Aucune réservation antérieure à la date de demande de prolongement ne doit exister
+        if (reservationRepository.hasActiveReservationBeforeDate(prolongement.getExemplaire().getId(), prolongement.getDateDemande())) {
+            throw new IllegalStateException("Prolongement non autorisé, exemplaire réservé avant la demande de prolongement");
+        }
+
+        // 5. L'adhérant ne doit pas avoir de sanction active
+        if (abonnementRepository.hasActivePenalite(adherant.getIdAdherant(), LocalDate.now())) {
+            throw new IllegalStateException("Adhérant sanctionné");
+        }
+
+        // 6. L'abonnement de l'adhérant doit être valide
+        if (!adherant.hasValidAbonnement(LocalDate.now())) {
+            throw new IllegalStateException("Abonnement non valide");
+        }
+
+        // Calculer la nouvelle date de retour : date_retour_prevue actuelle + 14 jours
+        LocalDate nouvelleDateRetour = pret.getDateRetourPrevue().plusDays(DUREE_PROLONGEMENT);
+
+        // Vérifier que la nouvelle_date_retour_prevue dans Prolongement correspond
+        if (!prolongement.getNouvelleDateRetourPrevue().equals(nouvelleDateRetour)) {
+            logger.warn("La nouvelle date de retour proposée ({}) ne correspond pas à la règle (+14 jours: {}). Mise à jour avec la date calculée.",
+                    prolongement.getNouvelleDateRetourPrevue(), nouvelleDateRetour);
+            prolongement.setNouvelleDateRetourPrevue(nouvelleDateRetour);
+        }
+
+        // Mise à jour du prêt
+        pret.setDateRetourPrevue(nouvelleDateRetour);
+        pret.setNombreProlongements(pret.getNombreProlongements() + 1);
+        pretRepository.save(pret);
+
+        // Mise à jour du quota de prolongements
+        adherant.setQuotaRestantProlongement(adherant.getQuotaRestantProlongement() - 1);
+        adherantRepository.save(adherant);
+
+        // Mise à jour du statut de la demande
+        prolongement.setStatut(Prolongement.StatutProlongement.APPROUVE);
+        prolongementRepository.save(prolongement);
+
+        logger.info("Prolongement approuvé : id={}, nouvelle date de retour={}", idProlongement, nouvelleDateRetour);
+    }
+
+    @Transactional
+    public void refuserProlongement(Integer idProlongement) {
+        Prolongement prolongement = prolongementRepository.findById(idProlongement)
+                .orElseThrow(() -> new IllegalArgumentException("Demande de prolongement non trouvée"));
+
+        if (prolongement.getStatut() != Prolongement.StatutProlongement.EN_ATTENTE) {
+            throw new IllegalStateException("La demande de prolongement n'est pas en attente");
+        }
+
+        // Mise à jour du statut de la demande
+        prolongement.setStatut(Prolongement.StatutProlongement.REFUSE);
+        prolongementRepository.save(prolongement);
+
+        logger.info("Prolongement refusé : id={}", idProlongement);
+    }
+}
+pom.xml
+Voici quelques pages déjà existant, qu'il ne faut pas changer, juste prends exemple pour faire un layout du côte adherant et le menu verical et tout ça:
+index.jsp:
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+<%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<c:set var="pageTitle" value="Accueil" scope="request"/>
+<jsp:include page="/WEB-INF/views/layout.jsp"/>
+<div class="card">
+    <div class="card-body">
+        <h2 class="card-title">Bienvenue dans le système de gestion de la bibliothèque</h2>
+        <p class="card-text">Utilisez le menu à gauche pour gérer les adhérants, les prêts et les retours.</p>
+    </div>
+</div>
+layout.jsp:
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+<%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${pageTitle}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="${pageContext.request.contextPath}/css/styles.css" rel="stylesheet">
+</head>
+<body>
+    <header class="header d-flex align-items-center">
+        <i class="bi bi-list toggle-sidebar-btn"></i>
+        <div class="logo">
+            <h1>Bibliothèque</h1>
+        </div>
+    </header>
+    <aside class="sidebar">
+        <ul class="sidebar-nav">
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/index">
+                    <i class="bi bi-house ici"></i>
+                    <span>Accueil</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/ajouter">
+                    <i class="bi bi-person-plus ici"></i>
+                    <span>Ajouter un adhérant</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/adherants">
+                    <i class="bi bi-people ici"></i>
+                    <span>Liste des adhérants inscrits</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/prets">
+                    <i class="bi bi-book ici"></i>
+                    <span>Prêter un livre</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/prets/liste">
+                    <i class="bi bi-list-check ici"></i>
+                    <span>Prêts en cours</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/retours">
+                    <i class="bi bi-arrow-left-circle ici"></i>
+                    <span>Rendre un livre</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/reservations/liste">
+                    <i class="bi bi-bookmark-check ici"></i>
+                    <span>Réservations en attente</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/prolongements/liste">
+                    <i class="bi bi-arrow-clockwise ici"></i>
+                    <span>Prolongements en attente</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/jours-feries">
+                    <i class="bi bi-calendar-x ici"></i>
+                    <span>Gérer les jours fériés</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/penalites">
+                    <i class="bi bi-exclamation-circle ici"></i>
+                    <span>Pénalités en cours</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/renouveler">
+                    <i class="bi bi-arrow-repeat ici"></i>
+                    <span>Renouveler un abonnement</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="${pageContext.request.contextPath}/logout">
+                    <i class="bi bi-box-arrow-right ici"></i>
+                    <span>Déconnexion</span>
+                </a>
+            </li>
+        </ul>
+    </aside>
+    <main id="main">
+        <!-- Contenu spécifique inséré par chaque JSP -->
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggleBtn = document.querySelector('.toggle-sidebar-btn');
+            const body = document.body;
+            
+            toggleBtn.addEventListener('click', function() {
+                body.classList.toggle('toggle-sidebar');
+                if (body.classList.contains('toggle-sidebar')) {
+                    localStorage.setItem('sidebarState', 'collapsed');
+                } else {
+                    localStorage.setItem('sidebarState', 'expanded');
+                }
+            });
+
+            if (localStorage.getItem('sidebarState') === 'collapsed') {
+                body.classList.add('toggle-sidebar');
+            }
+        });
+    </script>
+</body>
+</html>
+Je rappelle que le but est de créer le côté adherant du site, mais de se concentrer d'abord sur le login et la page d'accueil avec le layout même css que le côté bibliothecaire
+permettre a un adherant de se connecter dans son compte pour pouvoir utiliser ses fonctionnalités
+Concentre toi sur que je te demande, ne complique pas les choses et ne change pas tout pour pas nuire au bon fonctionement du site (cote biblio fonctionne deja tres bien)
+Ce site et ces fonctionnalités marchent déjà très bien, sans erreur avec toutes les scénario possibles, donc ne change rien inutilement qui puisse cesser le bon fonctionnement du site
+Ne fais pas ce que je n'ai pas demandé et fais tout ça simplement sans compliqué les choses et ETAPE PAR ETAPE en français stp
+NE COMPLIQUE RIEN, suis bien les instructions et le même structure de code
+
+PROBLEME A REGLER:
+
+//MAis il y a aussi un soucis, quand un adherant reserve, si un exemplaire du livre qu'il a choisi être encore disponible mais qu'un seul est emprunté, il ne peut reserver celui qui est emrpunté car il y a déjà un exemplaire qui est disponible qu'il peut préter, lui ne sait pas quel est l'id de l'exemplaire qu'il a reserver, pour lui il reserve juste un livre, mais le systeme lui devrait savoir, et si il y a donc au moins de l'exemplaire de ce livre qui est encore disponible il ne peut pas reserver, il peut tout de suite preter
+
+//Si un adherant veut prolonger le livre (date demande > date retour prevue) il est sanctionné et ne peut pas prolonger
+
+//le quota restant de prolongement derait être incrementé lorsqu'un adherant rend le livre qu'il a prolongée
+
+//quand un adherant reserve un exemplaire (un livre) pendant qu'il est preté par un adehrant, si cet adherant le rend, le statut de l'exemplaire sera à reserve, lui seul peut preter cet exemplaire pendant un certain periode
+probleme: dans preter un livre efa automatique le oe livre no safidina eo amle formulaire dia ze exemplaire dispo amn'iny livre iny no pretena, nefa ici refa ipreter anle boky amzay le olona nreserve dia tsy mety satria tsisy statut "disponible" ao, comment on fait?
+
+refa oe ohatra oe misy adherant 1 zany zao nanao pret livre A exemplaire 1 dia misy adherant 2 te ireserve anle livre A io ko (izy tsy mafatatra anze oe exemplaire firy no ho reserveny fa le livre ftsn no fatany ts anjarany zany?) de tant que mbola misy exemplaire dispo amn'io livre a io de tsy afaka mireserve iz fa tokony tode manao pret?
+
+de ra ohatra oe misy adherant 1 nanao pret exemplaire 1 de misy andehrant 2 ireserv an'iny de refa avereny le adherant 1 io boky io dia toga da mivadika reserve statut anle exemplaire dia mila mverina manao pret le adherant 2 zay vo lasa emprunte le boky, sa oe refa nreserve ftsn izy ka namerina anle boky le adherant 1 de mivadika emprunte le statut?

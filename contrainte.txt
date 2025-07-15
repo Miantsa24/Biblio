@@ -1,0 +1,42 @@
+//pret apres reservation(il a jusqu'à 14j pour preter le livre sinon miverina dispo ny statut ou reserve si un autre a reserve apres lui)
+si un adherant (adherant 1) reserve un livre emprunté par adherant 2, a été approuvé par l'admin, (et qu'il y a plus d'exemplaire dispo pour ce livre) et que ce dernier rend l'exemplaire, le statut de l'exemplaire devient reserve et l'adherant 1 devra faire un pret pour ce livre qu'il a reserve
+là ce que fait pret c'est verifier si un exemplaire est disponible pour ce livre et vu que le statut des exemplaires de ce livre sont maintenant "emprunte" et "reserve", le systeme dira qu'il y a aucun exemplaire dispo
+Mais ce qu'il devrait faire c'est verifier si l'id de cet adherant est présent dans la table reservation, si il y est, il verifie si l'id de l'exemplaire qu'il a reservé a un statut reserve pour le livre et que si cet reservation a une statut honoree, alors il peut preter à celui là
+ex: 
+livre A (id 1) a deux exemplaires (exemplaire 1 et 2, 1 emprunte et 2 reserve)
+reservation:
+id_adherant=1
+id_exemplaire=2
+statut=honoree
+exemplaire:
+id_exemplaire=2
+id_livre=1
+statut=reserve
+pret:
+id_adherant=1
+id_livre=1
+on verifie si l'id de cet adherant figure dans la table reservation, si un des exemplaires du livre id=1 a un statut reserve, et si l'id de cet exemplaire reserve correspond à l'id de l'exemplaire dans la reservation de l'adherant 1, et que le statut de reservation est "honoree", si oui pour tout ça alors il peut preter
+on garde les mêmes fonctionnalités pour pret (verification et tout) mais on rajoute cela pour les prets apres reservations
+
+//prolongement et reservation:
+Si un adherant 1 reserve un livre A exemplaire 1 qui est emprunté par adherant 2, et que adherant 2 veut prolonger son pret, il est prioritaire et la date de reservation est repoussé jusqu'au retour du livre
+prolongement priorite
+
+//Mais il y a aussi un soucis, quand un adherant reserve, si un exemplaire du livre qu'il a choisi est encore disponible mais qu'un seul est emprunté, il ne peut reserver celui qui est emrpunté car il y a déjà un exemplaire qui est disponible qu'il peut préter, lui ne sait pas quel est l'id de l'exemplaire qu'il a reserver, pour lui il reserve juste un livre, mais le systeme lui devrait savoir
+et si il y a donc au moins de l'exemplaire de ce livre qui est encore disponible il ne peut pas reserver, il peut tout de suite preter
+
+//le quota de prolongement devrait être incrémenté après le retour du livre (apres prolongement), rendreLivreService tient juste en compte setQuotaRestant + 1 quand il rend un livre, mais quand il rend aussi un livre apres prolongement setQuotaRestantProlongement (getQuotaRestantProlongement + 1) aussi
+
+de aona zany raha hoe nanao reservation livre 1 ny adherant 1 de le exemplaire 1 no voreserve (samy emprunte ny exemplaire 1 sy 2, fa le 1 no nreserveny) de nefa le exemplaire 2 no rendu voalohany dia iny ve tsy afaka tode lasa iny no reserveny sa oe refa exemplaire 1 dia exemplaire 1?
+
+//Si un adherant veut prolonger le livre (date demande > date retour prevue) il est sanctionné et ne peut pas prolonger
+
+
+//date_reservation dans la table Reservation représente la date limite à laquelle l’adhérant doit emprunter l’exemplaire réservé. Si cette date est dépassée, la réservation devient ANNULEE, et l’exemplaire redevient DISPONIBLE (ou RESERVE si une autre réservation active existe).
+
+//quota_restant_reservation incrémenté quand l'adherant a preté l'exemplaire qu'il a reservé
+
+
+A REGLER:
+MESSAGE A RENVOYER SI L'EXEMPLAIRE EST RESERVE PAR UN AUTRE :"EXEMPLAIRE EST RESERVE PAR UN AUTRE" (deja dans pretService), CE QUI S'AFFICHE C'EST "AUCUN EXEMPLAIRE DISPONIBLE OU RESERVER PAR CET ADHERANT" (pas le cas)
+>> à regler 

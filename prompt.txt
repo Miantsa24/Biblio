@@ -1,0 +1,654 @@
+Maintenant ce que je dois faire c'est cote utilisateur adherant et non bibliothécaire, c'est la page de connexion d'un adherant, lorsqu'on ajoute un adherant, il a un email et un mot de passe unique, et c'est ça qui est verifié dans la base si elle existe et c'est là qu'elle peut entrer dans le site, les adherants ne peuvent voir que les fonctionnalités suivantes: "Liste des livres", "Reserver un livre", "Liste des prets de l'adherant en cours + bouton prolonger (pour prolonger le pret si possible)",etc, il ne peut pas voir les fonctionnalités du bibliothécaire
+On va se concentrer d'abord sur le login de l'adherant et apres on fera petit à petit les fonctionnalités du côté adherant
+Voici la fonctionnalité:
+Connexion adhérant
+
+Nom: Connexion_adhérant
+Objectifs: Permettre à un adhérant de se connecter au système pour accéder à ses fonctionnalités (réservation, prolongement, renouvellement d'abonnement).
+Acteur: Adhérant
+Entrée:
+email
+Mot de passe
+
+
+Scénario nominal:
+L'adhérant accède à l'interface de connexion.
+Il entre son login(email) et son mot de passe.
+Il clique sur le bouton "Se connecter".
+
+
+Règles de gestion:
+Le login et le mot de passe doivent correspondre à un adhérant existant.
+L'abonnement de l'adhérant doit être valide (date actuelle entre date de début et date de fin).
+L'adhérant ne doit pas avoir de sanction active.
+
+
+Scénario alternatif:
+Si une règle de gestion n'est pas respectée, afficher une erreur (ex. : "Identifiants incorrects" ou "Compte sanctionné").
+
+
+Résultat:
+L'adhérant est connecté et peut accéder aux fonctionnalités autorisées (réservation, prolongement, renouvellement d'abonnement).
+Voici la base pour rappel:
+-- Création de la base de données
+CREATE DATABASE biblio;
+USE biblio;
+
+-- Table des livres
+CREATE TABLE Livre (
+    id_livre INT AUTO_INCREMENT PRIMARY KEY,
+    titre VARCHAR(255) NOT NULL,
+    auteur VARCHAR(255),
+    age_minimum INT NOT NULL DEFAULT 0, -- Âge minimum requis pour emprunter (ex. 18 pour certains livres)
+    isbn VARCHAR(13) UNIQUE
+);
+
+-- Table des exemplaires
+CREATE TABLE Exemplaire (
+    id_exemplaire INT AUTO_INCREMENT PRIMARY KEY,
+    id_livre INT NOT NULL,
+    statut ENUM('DISPONIBLE', 'EMPRUNTE', 'RESERVE') NOT NULL DEFAULT 'DISPONIBLE',
+    FOREIGN KEY (id_livre) REFERENCES Livre(id_livre) ON DELETE CASCADE
+);
+
+-- Table des types d'adhérants
+CREATE TABLE TypeAdherant (
+    id_type_adherant INT AUTO_INCREMENT PRIMARY KEY,
+    nom_type VARCHAR(255) UNIQUE NOT NULL,
+    quota_emprunts INT NOT NULL,
+    quota_reservations INT NOT NULL,
+    quota_prolongements INT NOT NULL
+);
+
+-- Table des adhérants
+CREATE TABLE Adherant (
+    id_adherant INT AUTO_INCREMENT PRIMARY KEY,
+    nom VARCHAR(255) NOT NULL,
+    prenom VARCHAR(255) NOT NULL,
+    date_naissance DATE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    mot_de_passe VARCHAR(255) NOT NULL,
+    id_type_adherant INT NOT NULL,
+    quota_restant INT NOT NULL DEFAULT 0, -- Nombre d'emprunts restants (initialisé via AdherantService)
+    FOREIGN KEY (id_type_adherant) REFERENCES TypeAdherant(id_type_adherant) ON DELETE RESTRICT
+);
+
+-- Table des abonnements
+CREATE TABLE Abonnement (
+    id_abonnement INT AUTO_INCREMENT PRIMARY KEY,
+    id_adherant INT NOT NULL,
+    date_debut DATE NOT NULL,
+    date_fin DATE NOT NULL,
+    CHECK (date_fin > date_debut),
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE
+);
+
+-- Table des prêts
+CREATE TABLE Pret (
+    id_pret INT AUTO_INCREMENT PRIMARY KEY,
+    id_exemplaire INT NOT NULL,
+    id_adherant INT NOT NULL,
+    date_pret DATE NOT NULL,
+    date_retour_prevue DATE NOT NULL,
+    date_retour_reelle DATE,
+    type_pret ENUM('LECTURE_SUR_PLACE', 'A_EMPORTER') NOT NULL,
+    nombre_prolongements INT DEFAULT 0,
+    CHECK (date_retour_prevue >= date_pret),
+    FOREIGN KEY (id_exemplaire) REFERENCES Exemplaire(id_exemplaire) ON DELETE CASCADE,
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE
+);
+
+-- Table des réservations
+CREATE TABLE Reservation (
+    id_reservation INT AUTO_INCREMENT PRIMARY KEY,
+    id_exemplaire INT NOT NULL,
+    id_adherant INT NOT NULL,
+    date_reservation DATE NOT NULL,
+    statut ENUM('EN_ATTENTE', 'HONOREE', 'ANNULEE') NOT NULL DEFAULT 'EN_ATTENTE',
+    FOREIGN KEY (id_exemplaire) REFERENCES Exemplaire(id_exemplaire) ON DELETE CASCADE,
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE
+);
+
+-- Table des pénalités
+CREATE TABLE Penalite (
+    id_penalite INT AUTO_INCREMENT PRIMARY KEY,
+    id_adherant INT NOT NULL,
+    id_pret INT, -- Lien vers le prêt spécifique (facultatif)
+    type_penalite ENUM('RETARD') NOT NULL,
+    date_debut_penalite DATE NOT NULL,
+    nombre_jours INT NOT NULL,
+    date_fin_penalite DATE NOT NULL,
+    CHECK (date_fin_penalite >= date_debut_penalite),
+    FOREIGN KEY (id_adherant) REFERENCES Adherant(id_adherant) ON DELETE CASCADE,
+    FOREIGN KEY (id_pret) REFERENCES Pret(id_pret) ON DELETE SET NULL
+);
+
+-- Table des jours fériés
+CREATE TABLE JourFerier (
+    id_jour_ferier INT AUTO_INCREMENT PRIMARY KEY,
+    date_ferier DATE NOT NULL UNIQUE,
+    description VARCHAR(255)
+);
+
+-- Données pour TypeAdherant
+INSERT INTO TypeAdherant (nom_type, quota_emprunts, quota_reservations, quota_prolongements)
+VALUES ('étudiant', 3, 2, 2),
+       ('professionnel', 5, 3, 2),
+       ('professeur', 5, 5, 3);
+
+INSERT INTO Livre (titre, auteur, age_minimum, isbn)
+VALUES 
+    ('Le Petit Prince', 'Antoine de Saint-Exupéry', 0, '9781234567890'),
+    ('1984', 'George Orwell', 16, '9780987654321'),
+    ('Harry Potter', 'J.K. Rowling', 10, '9781122334455');
+
+    INSERT INTO Exemplaire (id_livre, statut)
+VALUES 
+    (1, 'DISPONIBLE'),
+    (1, 'DISPONIBLE'),
+    (2, 'DISPONIBLE'),
+    (2, 'DISPONIBLE'),
+    (3, 'DISPONIBLE');
+AdherantService:
+package com.example.biblio.service;
+
+import com.example.biblio.model.Adherant;
+import com.example.biblio.model.Abonnement;
+import com.example.biblio.model.TypeAdherant;
+import com.example.biblio.repository.AdherantRepository;
+import com.example.biblio.repository.AbonnementRepository;
+import com.example.biblio.repository.TypeAdherantRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.util.Optional;
+
+@Service
+public class AdherantService {
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @Autowired
+    private TypeAdherantRepository typeAdherantRepository;
+
+    @Autowired
+    private AbonnementRepository abonnementRepository;
+
+    public Adherant ajouterAdherant(String nom, String prenom, LocalDate dateNaissance, String email,
+                                    String nomTypeAdherant, String motDePasse,
+                                    LocalDate dateDebutAbonnement) {
+        // Vérification des champs obligatoires
+        if (nom == null || nom.isEmpty() || prenom == null || prenom.isEmpty() ||
+            dateNaissance == null || motDePasse == null || motDePasse.isEmpty()) {
+            throw new IllegalArgumentException("Nom, prénom, date de naissance, et mot de passe sont obligatoires");
+        }
+
+        // Vérification de l'unicité de l'email
+        if (adherantRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email déjà utilisé");
+        }
+
+        // Vérification du type d'adhérant
+        TypeAdherant typeAdherant = typeAdherantRepository.findByNomType(nomTypeAdherant)
+                .orElseThrow(() -> new IllegalArgumentException("Type d'adhérant invalide : " + nomTypeAdherant));
+
+        // Vérification de la date de début d'abonnement
+        if (dateDebutAbonnement == null) {
+            throw new IllegalArgumentException("La date de début d'abonnement est obligatoire");
+        }
+
+        // Calcul de la date de fin d'abonnement (365 jours après la date de début)
+        LocalDate dateFinAbonnement = dateDebutAbonnement.plusDays(365);
+
+        // Création de l'adhérant
+        Adherant adherant = new Adherant(nom, prenom, dateNaissance, email, typeAdherant, motDePasse);
+        adherant.setQuotaRestant(typeAdherant.getQuotaEmprunts()); // Initialisation de quota_restant
+
+        // Sauvegarde de l'adhérant
+        adherantRepository.save(adherant);
+
+        // Création de l'abonnement
+        Abonnement abonnement = new Abonnement(adherant, dateDebutAbonnement, dateFinAbonnement);
+        abonnementRepository.save(abonnement);
+
+        return adherant;
+    }
+
+    public void renouvelerAbonnement(Integer idAdherant, LocalDate nouvelleDateDebut) {
+        // Vérifier si l'adhérant existe
+        Adherant adherant = adherantRepository.findById(idAdherant)
+                .orElseThrow(() -> new IllegalArgumentException("Adhérant non trouvé"));
+
+        // Vérifier les pénalités actives
+        if (abonnementRepository.hasActivePenalite(idAdherant, LocalDate.now())) {
+            throw new IllegalArgumentException("L'adhérant a une pénalité active");
+        }
+
+        // Trouver l'abonnement actuel le plus récent
+        Optional<Abonnement> currentAbonnementOpt = abonnementRepository.findByAdherantIdAndDateFinAfter(idAdherant, LocalDate.now());
+        if (currentAbonnementOpt.isPresent()) {
+            LocalDate currentDateFin = currentAbonnementOpt.get().getDateFin();
+            // Vérifier que la nouvelle date de début est postérieure à la date de fin actuelle
+            if (nouvelleDateDebut.isBefore(currentDateFin) || nouvelleDateDebut.isEqual(currentDateFin)) {
+                throw new IllegalArgumentException("La nouvelle date de début doit être postérieure à la date de fin actuelle (" + currentDateFin + ")");
+            }
+        }
+
+        // Calculer la nouvelle date de fin (365 jours après la nouvelle date de début)
+        LocalDate nouvelleDateFin = nouvelleDateDebut.plusDays(365);
+
+        // Créer un nouvel abonnement
+        Abonnement nouvelAbonnement = new Abonnement(adherant, nouvelleDateDebut, nouvelleDateFin);
+        abonnementRepository.save(nouvelAbonnement);
+    }
+}
+AdherantRepository:
+package com.example.biblio.repository;
+
+import com.example.biblio.model.Adherant;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@Repository
+public interface AdherantRepository extends JpaRepository<Adherant, Integer> {
+    boolean existsByEmail(String email);
+
+    @Query("SELECT a FROM Adherant a WHERE EXISTS (SELECT ab FROM a.abonnements ab WHERE ab.dateFin > :currentDate)")
+    List<Adherant> findAllWithValidAbonnement(LocalDate currentDate);
+}
+AdherantController:
+package com.example.biblio.controller;
+
+import com.example.biblio.model.Adherant;
+import com.example.biblio.model.TypeAdherant;
+import com.example.biblio.repository.AdherantRepository;
+import com.example.biblio.repository.TypeAdherantRepository;
+import com.example.biblio.service.AdherantService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.List;
+
+@Controller
+public class AdherantController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AdherantController.class);
+
+    @Autowired
+    private AdherantService adherantService;
+
+    @Autowired
+    private TypeAdherantRepository typeAdherantRepository;
+
+    @Autowired
+    private AdherantRepository adherantRepository;
+
+    @GetMapping("/ajouter")
+    public String afficherFormulaireAjout(Model model, @RequestParam(value = "success", required = false) String success) {
+        try {
+            List<TypeAdherant> types = typeAdherantRepository.findAll();
+            model.addAttribute("typesAdherant", types);
+        } catch (Exception e) {
+            logger.error("Erreur lors de la récupération des TypeAdherant : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", "Erreur lors du chargement des types d'adhérants.");
+            model.addAttribute("typesAdherant", Collections.emptyList());
+        }
+
+        String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        model.addAttribute("now", formattedDate);
+        if ("true".equals(success)) {
+            model.addAttribute("successMessage", "Adhérant ajouté avec succès !");
+        }
+        return "ajouter-adherant";
+    }
+
+    @PostMapping("/ajouter")
+    public String ajouterAdherant(@RequestParam String nom,
+                                  @RequestParam String prenom,
+                                  @RequestParam String dateNaissance,
+                                  @RequestParam String email,
+                                  @RequestParam String nomTypeAdherant,
+                                  @RequestParam String motDePasse,
+                                  @RequestParam String dateDebutAbonnement,
+                                  Model model) {
+        try {
+            adherantService.ajouterAdherant(
+                nom, prenom, LocalDate.parse(dateNaissance), email, nomTypeAdherant,
+                motDePasse, LocalDate.parse(dateDebutAbonnement));
+            return "redirect:/ajouter?success=true";
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur lors de l'ajout de l'adhérant : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", e.getMessage());
+            try {
+                model.addAttribute("typesAdherant", typeAdherantRepository.findAll());
+            } catch (Exception ex) {
+                logger.error("Erreur lors de la récupération des TypeAdherant (POST) : {}", ex.getMessage(), ex);
+                model.addAttribute("typesAdherant", Collections.emptyList());
+                model.addAttribute("errorMessage", "Erreur lors du chargement des types d'adhérants : " + ex.getMessage());
+            }
+            String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            model.addAttribute("now", formattedDate);
+            return "ajouter-adherant";
+        }
+    }
+
+    @GetMapping("/adherants")
+    public String listAdherants(Model model) {
+        try {
+            LocalDate currentDate = LocalDate.now();
+            logger.info("Récupération des adhérants avec abonnement valide au : {}", currentDate);
+            List<Adherant> adherants = adherantRepository.findAllWithValidAbonnement(currentDate);
+            for (Adherant adherant : adherants) {
+                adherant.getAbonnements().size();
+                logger.debug("Adhérant ID: {}, Nom: {}, Abonnements: {}", 
+                             adherant.getIdAdherant(), adherant.getNom() + " " + adherant.getPrenom(), adherant.getAbonnements());
+            }
+            logger.info("Adhérants avec abonnement valide trouvés : {}", adherants.size());
+            model.addAttribute("adherants", adherants);
+            model.addAttribute("currentDate", currentDate);
+        } catch (Exception e) {
+            logger.error("Erreur lors de la récupération des Adhérants : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", "Erreur lors du chargement des adhérants.");
+            model.addAttribute("adherants", Collections.emptyList());
+        }
+        return "liste-adherants";
+    }
+
+    @GetMapping("/renouveler")
+    public String afficherFormulaireRenouvellement(Model model, @RequestParam(value = "success", required = false) String success) {
+        String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        model.addAttribute("now", formattedDate);
+        if ("true".equals(success)) {
+            model.addAttribute("successMessage", "Abonnement renouvelé avec succès !");
+        }
+        return "renouveler-abonnement";
+    }
+
+    @PostMapping("/renouveler")
+    public String renouvelerAbonnement(@RequestParam Integer idAdherant,
+                                      @RequestParam String dateDebutAbonnement,
+                                      Model model) {
+        try {
+            adherantService.renouvelerAbonnement(idAdherant, LocalDate.parse(dateDebutAbonnement));
+            return "redirect:/renouveler?success=true";
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur lors du renouvellement de l'abonnement : {}", e.getMessage(), e);
+            model.addAttribute("errorMessage", e.getMessage());
+            String formattedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            model.addAttribute("now", formattedDate);
+            return "renouveler-abonnement";
+        }
+    }
+}
+Quand l'adherant reussira à accéder au site, le css du site reste le même que clui du bibliothcaire, dans le menu, tu peux d'abord mettre accueil, message en carte (Bienvenue {nom.adherant} {prenom.adherant} )comme dans bibliothecaire, et un logOut
+Prends exemple sur ce page-login.html, et prends juste ce qui sont nécéssaires
+Prends aussi exemple sur ce user-profil.html, regarde sur le header il y a une photo avec nom prenom de l'user, prends exemple sur ca aussi, on pourra aussi voir une page de "My profile" pour voir les informations de soi même
+Les codes couleurs reste les même
+styles.css:
+
+/* Couleurs NiceAdmin */
+:root {
+  --primary-color: #4154f1;
+  --secondary-color: #f6f9ff;
+  --sidebar-width: 250px;
+  --sidebar-collapsed-width: 80px;
+  --table-max-width: 1000px;
+}
+
+/* Corps de la page */
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: var(--secondary-color);
+  margin: 0;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+/* En-tête */
+.header {
+  background-color: #fff;
+  padding: 15px 20px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 15px; /* Espace entre le bouton toggle et le logo */
+}
+
+.logo h1 {
+  margin: 0;
+  font-size: 24px;
+  color: #4A6FA5;
+}
+
+.toggle-sidebar-btn {
+  font-size: 24px;
+  cursor: pointer;
+  color: #4A6FA5;
+  margin-left: 10px;
+}
+
+.toggle-sidebar-btn:hover {
+  color: #3745c8;
+}
+
+.ici {
+  color: #4A6FA5;
+
+}
+
+/* Barre latérale */
+.sidebar {
+  width: var(--sidebar-width);
+  background-color: #fff;
+  position: fixed;
+  top: 60px;
+  left: 0;
+  bottom: 0;
+  padding: 20px;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  overflow-y: auto;
+}
+
+.sidebar-nav {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar-nav .nav-item {
+  margin-bottom: 10px;
+}
+
+.sidebar-nav .nav-link {
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  color: #333;
+  text-decoration: none;
+  border-radius: 5px;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.sidebar-nav .nav-link:hover,
+.sidebar-nav .nav-link.active {
+  background-color: #4A6FA5;
+  color: #fff;
+}
+
+.sidebar-nav .nav-link i {
+  margin-right: 10px;
+  font-size: 20px;
+}
+
+.sidebar-nav .nav-link span {
+  font-size: 16px;
+}
+
+/* Contenu principal */
+main {
+  margin-left: var(--sidebar-width);
+  padding: 80px 40px 20px; /* Ajout de padding-left: 40px */
+  transition: all 0.3s ease;
+}
+
+/* État de la barre latérale masquée */
+body.toggle-sidebar .sidebar {
+  width: var(--sidebar-collapsed-width);
+}
+
+body.toggle-sidebar .sidebar .nav-link span {
+  display: none;
+}
+
+body.toggle-sidebar .sidebar .nav-link i {
+  margin-right: 0;
+  font-size: 24px;
+}
+
+body.toggle-sidebar main {
+  margin-left: var(--sidebar-collapsed-width);
+  padding: 80px 40px 20px; /* Maintenir padding-left: 40px */
+}
+
+/* Styles pour le tableau */
+.table-responsive {
+  max-width: var(--table-max-width, 1000px);
+  margin: 0 auto;
+  padding-left: 10px; /* Petit padding pour éviter tout débordement à gauche */
+
+}
+
+.table {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  width: 100%;
+}
+
+.table th {
+  background-color: #4A6FA5;
+  color: #fff;
+  padding: 12px;
+  font-weight: 600;
+}
+
+.table td {
+  padding: 12px;
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background-color: var(--secondary-color);
+}
+
+/* Styles pour le formulaire et la carte */
+.card {
+  background-color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  max-width: var(--table-max-width);
+  margin: 0 auto;
+}
+
+.card-title {
+  color:  #4A6FA5;
+;
+  font-size: 24px;
+  margin-bottom: 20px;
+}
+
+.btn-primary {
+  background-color:   #4A6FA5;
+;
+  border-color:  #4A6FA5;
+}
+
+.btn-primary:hover {
+  background-color: #3745c8;
+  border-color: #3745c8;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+  background-color: #5a6268;
+  border-color: #5a6268;
+}
+
+.alert-success{
+  margin-bottom: 20px;
+  color: rgb(1, 111, 1);
+}
+.alert-danger {
+  margin-bottom: 20px;
+  color: red;
+}
+
+/* Responsive pour petits écrans */
+@media (max-width: 768px) {
+  .sidebar {
+    width: var(--sidebar-collapsed-width);
+  }
+
+  .sidebar .nav-link span {
+    display: none;
+  }
+
+  .sidebar .nav-link i {
+    margin-right: 0;
+    font-size: 24px;
+  }
+
+  main {
+    margin-left: var(--sidebar-collapsed-width);
+  }
+
+  body.toggle-sidebar .sidebar {
+    width: var(--sidebar-width);
+  }
+
+  body.toggle-sidebar .sidebar .nav-link span {
+    display: inline;
+  }
+
+  body.toggle-sidebar .sidebar .nav-link i {
+    margin-right: 10px;
+    font-size: 20px;
+  }
+
+  body.toggle-sidebar main {
+    margin-left: var(--sidebar-width);
+  }
+
+  .table-responsive {
+    max-width: 100%;
+  
+
+  }
+
+  .card {
+    max-width: 100%;
+  }
+}
