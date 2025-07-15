@@ -215,21 +215,30 @@ public class AdherantController {
                 logger.debug("Livre ID: {}, Titre: {}, Exemplaires: {}", 
                              livre.getId(), livre.getTitre(), livre.getExemplaires());
             }
-            // Récupérer les IDs des exemplaires réservés par l'adhérant
-            List<Integer> exemplaireReservations = idAdherant != null ? 
-                reservationRepository.findByIdAdherant(idAdherant).stream()
-                    .filter(r -> r.getStatut() == Reservation.StatutReservation.EN_ATTENTE || r.getStatut() == Reservation.StatutReservation.HONOREE)
+            // Récupérer les IDs des exemplaires réservés par l'adhérant (EN_ATTENTE)
+            List<Integer> exemplaireReservationsEnAttente = idAdherant != null ? 
+                reservationRepository.findAllByAdherantIdAndStatut(idAdherant, Reservation.StatutReservation.EN_ATTENTE)
+                    .stream()
                     .map(Reservation::getIdExemplaire)
                     .collect(Collectors.toList()) : Collections.emptyList();
-            logger.info("Livres trouvés : {}, Exemplaires réservés par adhérant ID {} : {}", livres.size(), idAdherant, exemplaireReservations.size());
+            // Récupérer les IDs des exemplaires réservés par l'adhérant (HONOREE)
+            List<Integer> exemplaireReservationsHonoree = idAdherant != null ? 
+                reservationRepository.findAllByAdherantIdAndStatut(idAdherant, Reservation.StatutReservation.HONOREE)
+                    .stream()
+                    .map(Reservation::getIdExemplaire)
+                    .collect(Collectors.toList()) : Collections.emptyList();
+            logger.info("Livres trouvés : {}, Exemplaires en attente par adhérant ID {} : {}, Exemplaires honorés : {}", 
+                        livres.size(), idAdherant, exemplaireReservationsEnAttente.size(), exemplaireReservationsHonoree.size());
             model.addAttribute("livres", livres);
-            model.addAttribute("exemplaireReservations", exemplaireReservations);
+            model.addAttribute("exemplaireReservationsEnAttente", exemplaireReservationsEnAttente);
+            model.addAttribute("exemplaireReservationsHonoree", exemplaireReservationsHonoree);
             model.addAttribute("idAdherant", idAdherant);
         } catch (Exception e) {
             logger.error("Erreur lors de la récupération des livres : {}", e.getMessage(), e);
             model.addAttribute("errorMessage", "Erreur lors du chargement des livres.");
             model.addAttribute("livres", Collections.emptyList());
-            model.addAttribute("exemplaireReservations", Collections.emptyList());
+            model.addAttribute("exemplaireReservationsEnAttente", Collections.emptyList());
+            model.addAttribute("exemplaireReservationsHonoree", Collections.emptyList());
             model.addAttribute("idAdherant", idAdherant);
         }
         return "livres";
