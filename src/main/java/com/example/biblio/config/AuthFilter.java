@@ -39,10 +39,10 @@ public class AuthFilter extends OncePerRequestFilter {
 
         // Routes pour adhérants
         if (requestURI.startsWith("/adherant/")) {
-            if (session.getAttribute("adherantLoggedIn") == null) {
-                response.sendRedirect("/adherant/login");
-                return;
-            }
+            if (session == null || session.getAttribute("adherantLoggedIn") == null) {
+        response.sendRedirect("/adherant/login");
+        return;
+    }
         }
         // Routes pour administrateurs
         else {

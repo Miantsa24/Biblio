@@ -64,7 +64,7 @@ public class LoginController {
         try {
             Adherant adherant = adherantLoginService.authenticate(email, password);
             session.setAttribute("adherant", adherant);
-            session.setAttribute("adherantLoggedIn", true);
+            session.setAttribute("adherantLoggedIn", adherant.getIdAdherant());
             session.setAttribute("adherantId", adherant.getIdAdherant());
             session.setAttribute("adherantNom", adherant.getPrenom() + " " + adherant.getNom());
             logger.info("Connexion réussie pour l'adhérant : {}", email);

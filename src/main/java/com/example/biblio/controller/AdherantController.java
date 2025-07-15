@@ -43,6 +43,8 @@ import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpSession;
 
 import java.util.Optional;
+import java.util.Set;
+
 
 @Controller
 public class AdherantController {
@@ -236,39 +238,74 @@ public class AdherantController {
 
     @GetMapping("/adherant/livres")
     public String listLivres(Model model, HttpSession session) {
-        if (session.getAttribute("adherantLoggedIn") == null) {
-            logger.warn("Tentative d'accès à /adherant/livres sans connexion");
-            return "redirect:/adherant/login";
-        }
-        Adherant adherant = (Adherant) session.getAttribute("adherant");
-        Integer idAdherant = adherant != null ? adherant.getIdAdherant() : null;
         try {
-            List<Livre> livres = livreRepository.findAll();
-            for (Livre livre : livres) {
-                livre.getExemplaires().size(); // Initialize lazy-loaded exemplaires
-                logger.debug("Livre ID: {}, Titre: {}, Exemplaires: {}",
-                        livre.getId(), livre.getTitre(), livre.getExemplaires());
+            // Vérifier si un adhérant est connecté
+            Integer idAdherant = (Integer) session.getAttribute("adherantLoggedIn");
+            if (idAdherant == null) {
+                logger.warn("Tentative d'accès à /adherant/livres sans connexion.");
+                return "redirect:/adherant/login";
             }
-            // Récupérer les IDs des exemplaires réservés par l'adhérant
-            List<Integer> exemplaireReservations = idAdherant != null
-                    ? reservationRepository.findByIdAdherant(idAdherant).stream()
-                            .filter(r -> r.getStatut() == Reservation.StatutReservation.EN_ATTENTE
-                                    || r.getStatut() == Reservation.StatutReservation.HONOREE)
-                            .map(Reservation::getIdExemplaire)
-                            .collect(Collectors.toList())
-                    : Collections.emptyList();
-            logger.info("Livres trouvés : {}, Exemplaires réservés par adhérant ID {} : {}", livres.size(), idAdherant,
-                    exemplaireReservations.size());
+
+            LocalDate currentDate = LocalDate.now();
+            logger.info("Récupération des livres pour l'adhérant ID {} à la date {}", idAdherant, currentDate);
+
+            // Récupérer tous les livres
+            List<Livre> livres = livreRepository.findAll();
+            // Récupérer les réservations actives de l'adhérant
+            List<Reservation> reservations = reservationRepository.findByIdAdherant(idAdherant);
+            Set<Integer> exemplaireReservations = reservations.stream()
+                    .filter(r -> r.getStatut() == Reservation.StatutReservation.EN_ATTENTE || r.getStatut() == Reservation.StatutReservation.HONOREE)
+                    .map(Reservation::getIdExemplaire)
+                    .collect(Collectors.toSet());
+            // Récupérer les réservations honorées uniquement
+            Set<Integer> exemplaireReservationsHonorees = reservations.stream()
+                    .filter(r -> r.getStatut() == Reservation.StatutReservation.HONOREE)
+                    .map(Reservation::getIdExemplaire)
+                    .collect(Collectors.toSet());
+
+            // Récupérer les prêts en cours de l'adhérant
+            List<Pret> pretsEnCours = pretRepository.findByAdherantIdAndDateRetourReelleIsNull(idAdherant);
+            Set<Integer> exemplairePrets = pretsEnCours.stream()
+                    .map(pret -> pret.getExemplaire().getId())
+                    .collect(Collectors.toSet());
+
+            // Mettre à jour les statuts des exemplaires
+            for (Livre livre : livres) {
+                livre.getExemplaires().size(); // Initialiser la liste des exemplaires
+                for (Exemplaire exemplaire : livre.getExemplaires()) {
+                    // Si l'exemplaire est réservé avec une réservation honorée
+                    if (exemplaire.getStatut() == Exemplaire.StatutExemplaire.RESERVE) {
+                        Reservation reservation = reservationRepository.findTopPriorityReservationByExemplaireId(exemplaire.getId());
+                        if (reservation != null && reservation.getStatut() == Reservation.StatutReservation.HONOREE) {
+                            // Vérifier si le prêt associé est rendu
+                            Pret pret = pretRepository.findByExemplaireIdAndDateRetourReelleIsNull(exemplaire.getId());
+                            if (pret == null) { // Aucun prêt en cours, donc rendu
+                                boolean hasOtherActiveReservations = reservationRepository.hasActiveReservation(exemplaire.getId());
+                                if (!hasOtherActiveReservations) {
+                                    exemplaire.setStatut(Exemplaire.StatutExemplaire.DISPONIBLE);
+                                    reservation.setStatut(Reservation.StatutReservation.TERMINEE);
+                                    reservationRepository.save(reservation);
+                                    exemplaireRepository.save(exemplaire);
+                                    logger.info("Exemplaire ID {} mis à jour à DISPONIBLE car réservation honorée et prêt rendu.", exemplaire.getId());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             model.addAttribute("livres", livres);
             model.addAttribute("exemplaireReservations", exemplaireReservations);
-            model.addAttribute("idAdherant", idAdherant);
+            model.addAttribute("exemplaireReservationsHonorees", exemplaireReservationsHonorees);
+            model.addAttribute("exemplairePrets", exemplairePrets);
+            model.addAttribute("currentDate", currentDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+
         } catch (Exception e) {
             logger.error("Erreur lors de la récupération des livres : {}", e.getMessage(), e);
             model.addAttribute("errorMessage", "Erreur lors du chargement des livres.");
             model.addAttribute("livres", Collections.emptyList());
-            model.addAttribute("exemplaireReservations", Collections.emptyList());
-            model.addAttribute("idAdherant", idAdherant);
         }
+
         return "livres";
     }
 

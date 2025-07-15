@@ -35,7 +35,7 @@ main h2.page-title {
   font-weight: 700;
   color: #4A6FA5;
   margin-bottom: 20px;
-  margin-top: 5px; /* Espacement minimal au-dessus */
+  margin-top: 5px;
 }
 
 .card.exemplaire-card {
@@ -152,18 +152,21 @@ main h2.page-title {
                                         <c:when test="${exemplaire.statut == 'DISPONIBLE'}">
                                             <span class="badge bg-success">Disponible</span>
                                         </c:when>
+                                        <c:when test="${exemplairePrets.contains(exemplaire.id)}">
+                                            <span class="badge bg-warning">Emprunté par vous</span>
+                                        </c:when>
+                                        <c:when test="${exemplaireReservationsHonorees.contains(exemplaire.id)}">
+                                            <span class="badge bg-primary">Réservé par vous</span>
+                                        </c:when>
                                         <c:when test="${exemplaire.statut == 'EMPRUNTE'}">
                                             <span class="badge bg-warning">Emprunté</span>
-                                        </c:when>
-                                        <c:when test="${exemplaire.statut == 'RESERVE' && exemplaireReservations.contains(exemplaire.id)}">
-                                            <span class="badge bg-primary">Réservé par vous</span>
                                         </c:when>
                                         <c:when test="${exemplaire.statut == 'RESERVE'}">
                                             <span class="badge bg-info">Réservé</span>
                                         </c:when>
                                     </c:choose>
                                 </p>
-                                <c:if test="${exemplaire.statut == 'EMPRUNTE' || (exemplaire.statut == 'RESERVE' && !exemplaireReservations.contains(exemplaire.id))}">
+                                <c:if test="${(exemplaire.statut == 'EMPRUNTE' || exemplaire.statut == 'RESERVE') && !exemplairePrets.contains(exemplaire.id) && !exemplaireReservations.contains(exemplaire.id)}">
                                     <a href="/adherant/reservations?idExemplaire=${exemplaire.id}" class="btn btn-primary btn-sm">
                                         <i class="bi bi-bookmark-plus"></i> Réserver
                                     </a>
