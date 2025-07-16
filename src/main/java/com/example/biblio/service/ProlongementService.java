@@ -12,14 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-// import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 public class ProlongementService {
 
     private static final Logger logger = LoggerFactory.getLogger(ProlongementService.class);
-    private static final int DUREE_PROLONGEMENT = 14; // Durée du prolongement en jours
 
     @Autowired
     private ProlongementRepository prolongementRepository;
@@ -86,8 +84,11 @@ public class ProlongementService {
             throw new IllegalStateException("Une demande de prolongement est déjà en attente pour ce prêt");
         }
 
+        // Calculer la nouvelle date de retour en utilisant jours_prets du type d'adhérant
+        int joursProlongement = adherant.getTypeAdherant().getJoursPrets();
+        LocalDate nouvelleDateRetour = pret.getDateRetourPrevue().plusDays(joursProlongement);
+
         // Créer la demande de prolongement
-        LocalDate nouvelleDateRetour = pret.getDateRetourPrevue().plusDays(DUREE_PROLONGEMENT);
         Prolongement prolongement = new Prolongement(
                 pret,
                 adherant,
@@ -98,8 +99,8 @@ public class ProlongementService {
         prolongement.setStatut(Prolongement.StatutProlongement.EN_ATTENTE);
         prolongementRepository.save(prolongement);
 
-        logger.info("Demande de prolongement créée : id={}, prêt id={}, nouvelle date de retour={}",
-                prolongement.getId(), idPret, nouvelleDateRetour);
+        logger.info("Demande de prolongement créée : id={}, prêt id={}, nouvelle date de retour={}, durée prolongement={} jours",
+                prolongement.getId(), idPret, nouvelleDateRetour, joursProlongement);
     }
 
     @Transactional
@@ -150,13 +151,14 @@ public class ProlongementService {
             throw new IllegalStateException("Abonnement non valide");
         }
 
-        // Calculer la nouvelle date de retour : date_retour_prevue actuelle + 14 jours
-        LocalDate nouvelleDateRetour = pret.getDateRetourPrevue().plusDays(DUREE_PROLONGEMENT);
+        // Calculer la nouvelle date de retour : date_retour_prevue actuelle + jours_prets
+        int joursProlongement = adherant.getTypeAdherant().getJoursPrets();
+        LocalDate nouvelleDateRetour = pret.getDateRetourPrevue().plusDays(joursProlongement);
 
         // Vérifier que la nouvelle_date_retour_prevue dans Prolongement correspond
         if (!prolongement.getNouvelleDateRetourPrevue().equals(nouvelleDateRetour)) {
-            logger.warn("La nouvelle date de retour proposée ({}) ne correspond pas à la règle (+14 jours: {}). Mise à jour avec la date calculée.",
-                    prolongement.getNouvelleDateRetourPrevue(), nouvelleDateRetour);
+            logger.warn("La nouvelle date de retour proposée ({}) ne correspond pas à la règle (+{} jours: {}). Mise à jour avec la date calculée.",
+                    prolongement.getNouvelleDateRetourPrevue(), joursProlongement, nouvelleDateRetour);
             prolongement.setNouvelleDateRetourPrevue(nouvelleDateRetour);
         }
 
@@ -173,7 +175,8 @@ public class ProlongementService {
         prolongement.setStatut(Prolongement.StatutProlongement.APPROUVE);
         prolongementRepository.save(prolongement);
 
-        logger.info("Prolongement approuvé : id={}, nouvelle date de retour={}", idProlongement, nouvelleDateRetour);
+        logger.info("Prolongement approuvé : id={}, nouvelle date de retour={}, durée prolongement={} jours", 
+                    idProlongement, nouvelleDateRetour, joursProlongement);
     }
 
     @Transactional

@@ -139,48 +139,12 @@ CREATE TABLE Prolongement (
 -- Script pour corriger les quotas des adhérants existants
 -- Ce script met à jour les quotas restants en fonction du type d'adhérant
 
--- Mettre à jour les quotas restants pour tous les adhérants
-UPDATE Adherant a
-JOIN TypeAdherant ta ON a.id_type_adherant = ta.id_type_adherant
-SET 
-    a.quota_restant = ta.quota_emprunts - (
-        SELECT COUNT(*) 
-        FROM Pret p 
-        WHERE p.id_adherant = a.id_adherant 
-        AND p.date_retour_reelle IS NULL
-    ),
-    a.quota_restant_reservation = ta.quota_reservations - (
-        SELECT COUNT(*) 
-        FROM Reservation r 
-        WHERE r.id_adherant = a.id_adherant 
-        AND r.statut IN ('EN_ATTENTE', 'HONOREE')
-    ),
-    a.quota_restant_prolongement = ta.quota_prolongements - (
-        SELECT COUNT(*) 
-        FROM Prolongement pr 
-        WHERE pr.id_adherant = a.id_adherant 
-        AND pr.statut = 'APPROUVE'
-    );
 
--- Vérifier les résultats
-SELECT 
-    a.id_adherant,
-    CONCAT(a.nom, ' ', a.prenom) as nom_complet,
-    ta.nom_type,
-    ta.quota_emprunts,
-    a.quota_restant,
-    ta.quota_reservations,
-    a.quota_restant_reservation,
-    ta.quota_prolongements,
-    a.quota_restant_prolongement
-FROM Adherant a
-JOIN TypeAdherant ta ON a.id_type_adherant = ta.id_type_adherant
-ORDER BY a.id_adherant;
 
 -- Optionnel : Modifier les valeurs par défaut pour éviter les problèmes futurs
 -- (Bien que votre service gère déjà l'initialisation)
 
-ALTER TABLE Adherant 
-MODIFY COLUMN quota_restant INT NOT NULL DEFAULT 0,
-MODIFY COLUMN quota_restant_reservation INT NOT NULL DEFAULT 0,
-MODIFY COLUMN quota_restant_prolongement INT NOT NULL DEFAULT 0;
+-- ALTER TABLE Adherant 
+-- MODIFY COLUMN quota_restant INT NOT NULL DEFAULT 0,
+-- MODIFY COLUMN quota_restant_reservation INT NOT NULL DEFAULT 0,
+-- MODIFY COLUMN quota_restant_prolongement INT NOT NULL DEFAULT 0;
