@@ -19,7 +19,6 @@
                         <th>Date de naissance</th>
                         <th>Email</th>
                         <th>Type d'adhérant</th>
-                        <th>Quota restant</th>
                         <th>Quota emprunts</th>
                         <th>Quota réservations</th>
                         <th>Quota prolongements</th>
@@ -40,7 +39,6 @@
                             <td>${adherant.dateNaissance}</td>
                             <td>${adherant.email}</td>
                             <td>${adherant.typeAdherant.nomType}</td>
-                            <td>${adherant.quotaRestant}</td>
                             <td>${adherant.typeAdherant.quotaEmprunts}</td>
                             <td>${adherant.typeAdherant.quotaReservations}</td>
                             <td>${adherant.typeAdherant.quotaProlongements}</td>

@@ -8,13 +8,16 @@ CREATE TABLE Livre (
     titre VARCHAR(255) NOT NULL,
     auteur VARCHAR(255),
     age_minimum INT NOT NULL DEFAULT 0, -- Âge minimum requis pour emprunter (ex. 18 pour certains livres)
-    isbn VARCHAR(13) UNIQUE
+    isbn VARCHAR(13) UNIQUE,
+    categorie VARCHAR(50),
+    langue VARCHAR(50)
 );
 
 -- Table des exemplaires
 CREATE TABLE Exemplaire (
     id_exemplaire INT AUTO_INCREMENT PRIMARY KEY,
     id_livre INT NOT NULL,
+    nom VARCHAR(50) UNIQUE,
     statut ENUM('DISPONIBLE', 'EMPRUNTE', 'RESERVE') NOT NULL DEFAULT 'DISPONIBLE',
     FOREIGN KEY (id_livre) REFERENCES Livre(id_livre) ON DELETE CASCADE
 );
@@ -25,7 +28,9 @@ CREATE TABLE TypeAdherant (
     nom_type VARCHAR(255) UNIQUE NOT NULL,
     quota_emprunts INT NOT NULL,
     quota_reservations INT NOT NULL,
-    quota_prolongements INT NOT NULL
+    quota_prolongements INT NOT NULL,
+    jours_penalites INT NOT NULL,
+    jours_prets INT NOT NULL
 );
 
 -- Table des adhérants
@@ -37,9 +42,10 @@ CREATE TABLE Adherant (
     email VARCHAR(255) UNIQUE NOT NULL,
     mot_de_passe VARCHAR(255) NOT NULL,
     id_type_adherant INT NOT NULL,
-    quota_restant INT NOT NULL DEFAULT 0,
-    quota_restant_reservation INT NOT NULL DEFAULT 0,
-    quota_restant_prolongement INT NOT NULL DEFAULT 0, -- Nouvelle colonne
+    num_adherant VARCHAR(50) UNIQUE,
+    quota_restant INT NOT NULL ,
+    quota_restant_reservation INT NOT NULL ,
+    quota_restant_prolongement INT NOT NULL , -- Nouvelle colonne
     FOREIGN KEY (id_type_adherant) REFERENCES TypeAdherant(id_type_adherant) ON DELETE RESTRICT
 );
 
@@ -130,21 +136,51 @@ CREATE TABLE Prolongement (
 -- INSERT INTO Admin (nom, email, mot_de_passe)
 -- VALUES ('Admin Bibliothèque', 'admin@biblio.com', 'admin123'); -- Placeholder, sera remplacé par un mot de passe haché
 
--- Données pour TypeAdherant
-INSERT INTO TypeAdherant (nom_type, quota_emprunts, quota_reservations, quota_prolongements)
-VALUES ('étudiant', 3, 2, 2),
-       ('professionnel', 5, 3, 2),
-       ('professeur', 5, 5, 3);
+-- Script pour corriger les quotas des adhérants existants
+-- Ce script met à jour les quotas restants en fonction du type d'adhérant
 
-INSERT INTO Livre (titre, auteur, age_minimum, isbn)
-VALUES 
-    ('Le Petit Prince', 'Antoine de Saint-Exupéry', 0, '9781234567890'),
-    ('1984', 'George Orwell', 16, '9780987654321'),
-    ('Harry Potter', 'J.K. Rowling', 10, '9781122334455');
+-- Mettre à jour les quotas restants pour tous les adhérants
+UPDATE Adherant a
+JOIN TypeAdherant ta ON a.id_type_adherant = ta.id_type_adherant
+SET 
+    a.quota_restant = ta.quota_emprunts - (
+        SELECT COUNT(*) 
+        FROM Pret p 
+        WHERE p.id_adherant = a.id_adherant 
+        AND p.date_retour_reelle IS NULL
+    ),
+    a.quota_restant_reservation = ta.quota_reservations - (
+        SELECT COUNT(*) 
+        FROM Reservation r 
+        WHERE r.id_adherant = a.id_adherant 
+        AND r.statut IN ('EN_ATTENTE', 'HONOREE')
+    ),
+    a.quota_restant_prolongement = ta.quota_prolongements - (
+        SELECT COUNT(*) 
+        FROM Prolongement pr 
+        WHERE pr.id_adherant = a.id_adherant 
+        AND pr.statut = 'APPROUVE'
+    );
 
-    INSERT INTO Exemplaire (id_exemplaire, id_livre, statut)
-VALUES
-    (1, 1, 'EMPRUNTE'),
-    (2, 1, 'DISPONIBLE'),
-    (3, 2, 'EMPRUNTE'),
-    (4, 2, 'DISPONIBLE');
+-- Vérifier les résultats
+SELECT 
+    a.id_adherant,
+    CONCAT(a.nom, ' ', a.prenom) as nom_complet,
+    ta.nom_type,
+    ta.quota_emprunts,
+    a.quota_restant,
+    ta.quota_reservations,
+    a.quota_restant_reservation,
+    ta.quota_prolongements,
+    a.quota_restant_prolongement
+FROM Adherant a
+JOIN TypeAdherant ta ON a.id_type_adherant = ta.id_type_adherant
+ORDER BY a.id_adherant;
+
+-- Optionnel : Modifier les valeurs par défaut pour éviter les problèmes futurs
+-- (Bien que votre service gère déjà l'initialisation)
+
+ALTER TABLE Adherant 
+MODIFY COLUMN quota_restant INT NOT NULL DEFAULT 0,
+MODIFY COLUMN quota_restant_reservation INT NOT NULL DEFAULT 0,
+MODIFY COLUMN quota_restant_prolongement INT NOT NULL DEFAULT 0;

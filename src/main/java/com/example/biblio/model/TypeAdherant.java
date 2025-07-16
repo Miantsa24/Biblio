@@ -1,3 +1,4 @@
+
 package com.example.biblio.model;
 
 import jakarta.persistence.*;
@@ -5,7 +6,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "Typeadherant")
+@Table(name = "TypeAdherant")
 public class TypeAdherant {
 
     @Id
@@ -25,16 +26,24 @@ public class TypeAdherant {
     @Column(name = "quota_prolongements", nullable = false)
     private int quotaProlongements;
 
+    @Column(name = "jours_penalites", nullable = false)
+    private int joursPenalites;
+
+    @Column(name = "jours_prets", nullable = false)
+    private int joursPrets;
+
     @OneToMany(mappedBy = "typeAdherant")
     private Set<Adherant> adherants = new HashSet<>();
 
     public TypeAdherant() {}
 
-    public TypeAdherant(String nomType, int quotaEmprunts, int quotaReservations, int quotaProlongements) {
+    public TypeAdherant(String nomType, int quotaEmprunts, int quotaReservations, int quotaProlongements, int joursPenalites, int joursPrets) {
         this.nomType = nomType;
         this.quotaEmprunts = quotaEmprunts;
         this.quotaReservations = quotaReservations;
         this.quotaProlongements = quotaProlongements;
+        this.joursPenalites = joursPenalites;
+        this.joursPrets = joursPrets;
     }
 
     public Integer getId() {
@@ -75,6 +84,22 @@ public class TypeAdherant {
 
     public void setQuotaProlongements(int quotaProlongements) {
         this.quotaProlongements = quotaProlongements;
+    }
+
+    public int getJoursPenalites() {
+        return joursPenalites;
+    }
+
+    public void setJoursPenalites(int joursPenalites) {
+        this.joursPenalites = joursPenalites;
+    }
+
+    public int getJoursPrets() {
+        return joursPrets;
+    }
+
+    public void setJoursPrets(int joursPrets) {
+        this.joursPrets = joursPrets;
     }
 
     public Set<Adherant> getAdherants() {

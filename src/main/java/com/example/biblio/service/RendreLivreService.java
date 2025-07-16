@@ -1,3 +1,4 @@
+
 package com.example.biblio.service;
 
 import com.example.biblio.model.*;
@@ -14,7 +15,6 @@ import java.util.List;
 public class RendreLivreService {
 
     private static final Logger logger = LoggerFactory.getLogger(RendreLivreService.class);
-    private static final int NOMBRE_JOURS_PENALITE = 7; // Pénalité fixée à 7 jours en cas de retard
 
     @Autowired
     private AdherantRepository adherantRepository;
@@ -98,10 +98,12 @@ public class RendreLivreService {
             penalite.setPret(pret);
             penalite.setTypePenalite(Penalite.TypePenalite.RETARD);
             penalite.setDateDebutPenalite(dateRetourReelle);
-            penalite.setNombreJours(NOMBRE_JOURS_PENALITE);
-            penalite.setDateFinPenalite(dateRetourReelle.plusDays(NOMBRE_JOURS_PENALITE));
+            int joursPenalites = adherant.getTypeAdherant().getJoursPenalites();
+            penalite.setNombreJours(joursPenalites);
+            penalite.setDateFinPenalite(dateRetourReelle.plusDays(joursPenalites));
             penaliteRepository.save(penalite);
-            logger.info("Pénalité enregistrée: id={}, dateFinPenalite={}", penalite.getId(), penalite.getDateFinPenalite());
+            logger.info("Pénalité enregistrée: id={}, dateFinPenalite={}, joursPenalites={}", 
+                        penalite.getId(), penalite.getDateFinPenalite(), joursPenalites);
             dateFinPenalite = penalite.getDateFinPenalite();
         } else {
             logger.info("Aucune pénalité: retour dans les délais");

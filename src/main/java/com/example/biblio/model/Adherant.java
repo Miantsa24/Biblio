@@ -32,13 +32,13 @@ public class Adherant {
     @JoinColumn(name = "id_type_adherant", nullable = false)
     private TypeAdherant typeAdherant;
 
-    @Column(name = "quota_restant", nullable = false)
+    @Column(name = "quota_restant")
     private Integer quotaRestant;
 
-    @Column(name = "quota_restant_reservation", nullable = false)
+    @Column(name = "quota_restant_reservation")
     private Integer quotaRestantReservation;
 
-    @Column(name = "quota_restant_prolongement", nullable = false)
+    @Column(name = "quota_restant_prolongement")
     private Integer quotaRestantProlongement;
 
     @OneToMany(mappedBy = "adherant")

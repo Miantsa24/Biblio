@@ -25,6 +25,15 @@ public class Livre {
     @Column(name = "isbn", unique = true)
     private String isbn;
 
+    
+
+    @Column(name = "categorie")
+    private String categorie;
+
+
+    @Column(name = "langue")
+    private String langue;
+
     @OneToMany(mappedBy = "livre")
     private Set<Exemplaire> exemplaires = new HashSet<>();
 
@@ -83,5 +92,21 @@ public class Livre {
 
     public void setExemplaires(Set<Exemplaire> exemplaires) {
         this.exemplaires = exemplaires;
+    }
+
+    public String getCategorie() {
+        return categorie;
+    }
+
+    public void setCategorie(String categorie) {
+        this.categorie = categorie;
+    }
+
+    public String getLangue() {
+        return langue;
+    }
+
+    public void setLangue(String langue) {
+        this.langue = langue;
     }
 }

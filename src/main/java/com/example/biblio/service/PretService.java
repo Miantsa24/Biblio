@@ -1,3 +1,4 @@
+
 package com.example.biblio.service;
 
 import com.example.biblio.model.*;
@@ -16,7 +17,6 @@ import java.util.List;
 public class PretService {
 
     private static final Logger logger = LoggerFactory.getLogger(PretService.class);
-    private static final int DUREE_PRET = 14;
 
     @Autowired
     private AdherantRepository adherantRepository;
@@ -115,7 +115,8 @@ public class PretService {
         }
 
         // Créer le prêt
-        LocalDate dateRetourPrevue = datePret.plusDays(DUREE_PRET);
+        int joursPrets = adherant.getTypeAdherant().getJoursPrets();
+        LocalDate dateRetourPrevue = datePret.plusDays(joursPrets);
         while (jourFerierRepository.existsByDateFerier(dateRetourPrevue)) {
             dateRetourPrevue = dateRetourPrevue.plusDays(1);
         }
@@ -127,6 +128,7 @@ public class PretService {
         pret.setDateRetourPrevue(dateRetourPrevue);
         pret.setTypePret(Pret.TypePret.valueOf(typePret));
         pret.setNombreProlongements(0);
+
 
         // Mettre à jour le statut de l'exemplaire et de la réservation
         exemplaireChoisi.setStatut(Exemplaire.StatutExemplaire.EMPRUNTE);
@@ -147,7 +149,7 @@ public class PretService {
         exemplaireRepository.save(exemplaireChoisi);
         pretRepository.save(pret);
 
-        logger.info("Prêt créé : idAdherant={}, idExemplaire={}, datePret={}, dateRetourPrevue={}", 
-                    idAdherant, exemplaireChoisi.getId(), datePret, dateRetourPrevue);
+        logger.info("Prêt créé : idAdherant={}, idExemplaire={}, datePret={}, dateRetourPrevue={}, joursPrets={}", 
+                    idAdherant, exemplaireChoisi.getId(), datePret, dateRetourPrevue, joursPrets);
     }
 }
